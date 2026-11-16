@@ -3,18 +3,26 @@
 An animated teaching deck plus live demos for three ways to give a language model knowledge:
 **CAG** (cache-augmented generation), **RAG** (retrieval-augmented generation) and **KAG / GraphRAG** (knowledge graphs).
 
-## Deck
+## ▶ View the deck
 
-Open [index.html](index.html) in a browser. The slides are plain HTML, CSS and JavaScript; shared code is in [assets/](assets/).
+**[Open the deck](https://raoufmohammed90.github.io/RAG-CAG-KAG/)**, or jump to a page:
 
-| # | Topic |
-|---|-------|
-| 01 | The context window |
-| 02 | Prompt caching |
-| 03–04 | CAG and its limits |
-| 05–07 | Building RAG, RAG and its limits |
-| 08–11 | KAG, GraphRAG, how they compare, graph limits |
-| 12 | Side-by-side comparison |
+| # | Page | Source |
+|---|------|--------|
+| 01 | [The Context Window](https://raoufmohammed90.github.io/RAG-CAG-KAG/01-context-window.html) | [html](01-context-window.html) |
+| 02 | [Prompt Caching](https://raoufmohammed90.github.io/RAG-CAG-KAG/02-prompt-caching.html) | [html](02-prompt-caching.html) |
+| 03 | [Cache-Augmented Generation](https://raoufmohammed90.github.io/RAG-CAG-KAG/03-cag.html) | [html](03-cag.html) |
+| 04 | [Where CAG Stops Working](https://raoufmohammed90.github.io/RAG-CAG-KAG/04-cag-limits.html) | [html](04-cag-limits.html) |
+| 05 | [Building a RAG System](https://raoufmohammed90.github.io/RAG-CAG-KAG/05-rag-build.html) | [html](05-rag-build.html) |
+| 06 | [Retrieval-Augmented Generation](https://raoufmohammed90.github.io/RAG-CAG-KAG/06-rag.html) | [html](06-rag.html) |
+| 07 | [Where RAG Stops Working](https://raoufmohammed90.github.io/RAG-CAG-KAG/07-rag-limits.html) | [html](07-rag-limits.html) |
+| 08 | [KAG](https://raoufmohammed90.github.io/RAG-CAG-KAG/08-kag.html) | [html](08-kag.html) |
+| 09 | [GraphRAG](https://raoufmohammed90.github.io/RAG-CAG-KAG/09-graphrag.html) | [html](09-graphrag.html) |
+| 10 | [KAG vs GraphRAG](https://raoufmohammed90.github.io/RAG-CAG-KAG/10-kag-vs-graphrag.html) | [html](10-kag-vs-graphrag.html) |
+| 11 | [Where Graphs Stop Working](https://raoufmohammed90.github.io/RAG-CAG-KAG/11-graph-limits.html) | [html](11-graph-limits.html) |
+| 12 | [Choosing a Pattern](https://raoufmohammed90.github.io/RAG-CAG-KAG/12-compare.html) | [html](12-compare.html) |
+
+The pages are plain HTML, CSS and JavaScript; shared code is in [assets/](assets/). To run locally, open [index.html](index.html) in a browser.
 
 ## Demos
 
