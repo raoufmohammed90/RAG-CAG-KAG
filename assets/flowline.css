@@ -1,0 +1,109 @@
+/* ==========================================================================
+   RAG, CAG and KAG: stage-by-stage flow diagrams (pages 08 and 09)
+   A pipeline diagram grows one stage per step. The current stage plays its
+   animation in the big output panel below; on the next step the panel hides,
+   the stage keeps a small output tag, and the output moves along the arrow.
+   See assets/flowline.js.
+   ========================================================================== */
+
+.fl-board { position: absolute; inset: 0; padding: 12px 20px 12px; display: grid; grid-template-rows: auto auto minmax(0, 1fr); row-gap: 10px; font-family: var(--font-ui); }
+.fl-top { display: flex; align-items: center; gap: 14px; font-size: .8em; color: var(--ink-2); }
+.fl-top .phase { font-weight: 700; padding: 3px 12px; border-radius: 999px; border: 1.5px solid var(--ph, var(--p-kag)); color: var(--ph, var(--p-kag)); }
+.fl-top .spacer { flex: 1; }
+
+/* ---------- the diagram ---------- */
+.fl-diags { position: relative; height: clamp(124px, 19vh, 168px); }
+.fdiag { position: absolute; inset: 0; display: grid; align-items: center; column-gap: 34px; row-gap: 8px; transition: opacity .6s var(--ease), transform .7s var(--ease); }
+.fdiag.off { opacity: 0; transform: scale(.85); pointer-events: none; }
+.fdiag.folded { opacity: 0; transform: translateX(-38%) scale(.35); pointer-events: none; }
+.fl-links { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.fl-link { fill: none; stroke: var(--frame); stroke-width: 2.2; stroke-dasharray: 1; stroke-dashoffset: 1; transition: stroke-dashoffset .7s var(--ease), stroke .3s; }
+.fl-link.on { stroke-dashoffset: 0; }
+.fl-link.hot { stroke: var(--lc, var(--accent)); stroke-width: 3; }
+.fl-head { fill: var(--frame); opacity: 0; transition: opacity .3s .5s, fill .3s; }
+.fl-head.on { opacity: 1; }
+.fl-head.hot { fill: var(--lc, var(--accent)); }
+
+.fnode {
+  --nc: var(--p-kag);
+  position: relative; z-index: 1;
+  display: grid; grid-template-columns: 34px minmax(0, 1fr); column-gap: 8px; align-items: center;
+  padding: 7px 10px 13px;
+  min-width: 0;
+  border: 1.5px solid color-mix(in srgb, var(--nc) 45%, var(--rule));
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--nc) 6%, var(--card));
+  opacity: 0; transform: translateY(8px) scale(.94);
+  transition: opacity .45s var(--ease), transform .45s var(--ease), border-color .3s, box-shadow .3s, background .3s;
+}
+.fnode.on { opacity: 1; transform: none; }
+.fnode.cur { border-color: var(--nc); background: color-mix(in srgb, var(--nc) 13%, var(--card)); box-shadow: 0 0 0 4px color-mix(in srgb, var(--nc) 22%, transparent); }
+.fnode .fi { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; background: color-mix(in srgb, var(--nc) 16%, var(--card)); border: 1.5px solid color-mix(in srgb, var(--nc) 60%, var(--rule)); }
+.fnode .fi svg { width: 22px; height: 22px; fill: none; stroke: var(--nc); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.fnode.work .fi { animation: flWork .7s ease-in-out infinite alternate; }
+@keyframes flWork { to { background: color-mix(in srgb, var(--nc) 45%, var(--card)); transform: scale(1.08); } }
+.fnode b { display: block; font-size: .86em; line-height: 1.15; }
+.fnode small { display: block; font-size: .68em; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* the small output tag each finished stage keeps */
+.fnode .out {
+  position: absolute; left: 50%; bottom: -10px;
+  transform: translateX(-50%) scale(.6);
+  padding: 1px 8px; border-radius: 999px;
+  font-size: .66em; font-weight: 700; white-space: nowrap;
+  color: var(--on-color); background: var(--nc);
+  opacity: 0; transition: opacity .3s, transform .35s var(--ease);
+}
+.fnode .out.on { opacity: 1; transform: translateX(-50%); }
+.fnode.summary { border-style: dashed; border-width: 2px; }
+
+/* ---------- the big output panel ---------- */
+.fpanel { position: relative; min-height: 0; border: 1.5px solid var(--rule); border-radius: 14px; background: var(--sheet); overflow: hidden; }
+.fstage { position: absolute; inset: 0; display: grid; grid-template-rows: auto minmax(0, 1fr); }
+.fstage:not(.is-on) { display: none; }
+.fs-head { display: flex; align-items: baseline; gap: 12px; padding: 10px 16px; border-bottom: 1.5px solid var(--rule); background: color-mix(in srgb, var(--sc, var(--p-kag)) 8%, transparent); }
+.fs-head .tag { font-size: .76em; font-weight: 700; color: var(--sc, var(--p-kag)); border: 1.5px solid var(--sc, var(--p-kag)); border-radius: 999px; padding: 1px 9px; white-space: nowrap; }
+.fs-head h2 { margin: 0; font-size: 1.12em; }
+.fs-head p { margin: 0 0 0 auto; color: var(--ink-2); font-family: var(--font-text); font-size: .86em; text-align: right; max-width: 36em; }
+.fs-body { min-height: 0; padding: 14px 16px; display: grid; gap: 14px; font-size: .84em; overflow: hidden; }
+
+/* items that appear at set moments while the stage plays (see FlowLine.play) */
+[data-s] { opacity: 0; transform: translateY(6px); transition: opacity .45s var(--ease), transform .45s var(--ease); }
+[data-s].on { opacity: 1; transform: none; }
+
+/* building blocks shared by the stages */
+.card { border: 1.5px solid var(--rule); border-radius: 10px; background: var(--card); padding: 9px 11px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.card > h3 { margin: 0; font-size: .92em; display: flex; align-items: center; gap: 8px; }
+.card > h3 small { font-weight: 400; color: var(--ink-3); font-size: .86em; }
+.lab { font-size: .82em; color: var(--ink-3); font-weight: 700; }
+.chip { display: inline-flex; align-items: center; gap: 5px; border-radius: 999px; padding: 1px 9px; font-weight: 700; font-size: .9em; border: 1.5px solid var(--cc, var(--rule)); background: color-mix(in srgb, var(--cc, var(--rule)) 12%, var(--card)); white-space: nowrap; }
+.chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.note { color: var(--ink-2); font-family: var(--font-text); line-height: 1.4; }
+.nollm { border: 1.5px dashed var(--rule); border-radius: 8px; padding: 6px 10px; color: var(--ink-2); font-family: var(--font-text); }
+.nollm b { font-family: var(--font-ui); color: var(--ink); }
+
+/* an LLM call: sent, the model at work, returned */
+.xchg { display: grid; grid-template-columns: minmax(0, 1fr) 96px minmax(0, 1fr); gap: 12px; align-items: center; }
+.xchg .side { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.sent, .back { border-radius: 9px; padding: 7px 10px; font-family: var(--font-text); line-height: 1.4; }
+.sent { border: 1.5px solid var(--rule); background: var(--card); }
+.back { border: 1.5px solid var(--l3); background: color-mix(in srgb, var(--l3) 10%, var(--card)); }
+.sent b, .back b { font-family: var(--font-ui); }
+.sent b::after, .back b::after { content: " "; }
+.llm { display: grid; justify-items: center; gap: 4px; font-weight: 700; font-size: .86em; color: var(--l3); }
+.llm svg { width: 64px; height: 64px; }
+.llm svg .bx { fill: color-mix(in srgb, var(--l3) 14%, var(--card)); stroke: var(--l3); stroke-width: 2; }
+.llm svg .ln { stroke: color-mix(in srgb, var(--l3) 55%, transparent); stroke-width: 1.2; }
+.llm svg .nd { fill: var(--card); stroke: var(--l3); stroke-width: 1.8; }
+.llm.busy svg .nd { animation: flGlow .45s ease-in-out infinite alternate; animation-delay: calc(var(--i, 0) * .07s); }
+@keyframes flGlow { to { fill: var(--l3); } }
+.llm .arrow { color: var(--ink-3); font-size: 1.3em; line-height: 1; }
+
+/* facts: subject, relation, object */
+.fact { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 8px; align-items: center; padding: 4px 9px; border: 1.5px solid var(--rule); border-radius: 8px; background: var(--card); }
+.fact span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fact .rel { color: var(--p-kag); font-weight: 700; }
+.fact .rel::after { content: " →"; }
+.ty { display: inline-block; font-size: .8em; font-weight: 700; border-radius: 4px; padding: 0 5px; color: var(--on-color); background: var(--tc); vertical-align: 1px; margin-left: 3px; }
+
+.nodelay [data-s] { transition-delay: 0s !important; }
+@media (prefers-reduced-motion: reduce) { .fnode, [data-s] { transition-duration: .01s !important; } }

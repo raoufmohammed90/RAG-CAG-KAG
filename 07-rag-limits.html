@@ -1,0 +1,1368 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Where RAG Stops Working</title>
+<link rel="stylesheet" href="assets/deck.css?v=8">
+<style>
+  /* =================== scene: client, network, server =================== */
+  .scene {
+    position: absolute;
+    inset: 0;
+    padding: 18px 22px 14px;
+    display: grid;
+    grid-template-columns: minmax(0, .8fr) minmax(110px, .34fr) minmax(0, 1.6fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    row-gap: 12px;
+  }
+
+  .box {
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--card);
+    border: 1.5px solid var(--frame);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .box-head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 9px 14px 8px;
+    border-bottom: 1.5px solid var(--rule);
+    font-family: var(--font-ui);
+  }
+  .box-head b { font-size: 1.05em; }
+  .box-head span { color: var(--ink-2); font-size: .8em; }
+  .box.client { --tint: var(--c-history); }
+  .box.server { --tint: var(--l3); }
+  .box.client, .box.server {
+    background: color-mix(in srgb, var(--tint) 5%, var(--card));
+    border-color: color-mix(in srgb, var(--tint) 50%, var(--frame));
+  }
+  .box.client .box-head, .box.server .box-head {
+    background: color-mix(in srgb, var(--tint) 13%, transparent);
+    border-bottom-color: color-mix(in srgb, var(--tint) 30%, var(--rule));
+  }
+
+  /* ---------- client: the chat app ---------- */
+  .sys-chip {
+    margin: 10px 10px 0;
+    padding: 5px 9px;
+    border: 1.5px dashed var(--c-system);
+    border-radius: 6px;
+    font-family: var(--font-ui);
+    font-size: .76em;
+    color: var(--ink-2);
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .sys-chip b { color: var(--ink); font-weight: 600; white-space: nowrap; }
+  .sys-chip .sq { width: 10px; height: 10px; border-radius: 2px; background: var(--c-system); flex: none; }
+  .sys-chip.pulse { animation: pulse 1.2s var(--ease) 2; }
+  @keyframes pulse { 50% { background: color-mix(in srgb, var(--c-system) 20%, transparent); } }
+
+  .conv-label {
+    margin: 9px 10px 0;
+    font-family: var(--font-ui);
+    font-size: .74em;
+    color: var(--ink-2);
+    display: flex;
+    gap: 7px;
+    align-items: center;
+  }
+  .conv-label::before { content: ""; width: 10px; height: 10px; border-radius: 2px; background: var(--c-history); flex: none; }
+
+  .chat {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 7px;
+    margin: 6px 7px 7px;
+    padding: 7px 5px;
+    border-radius: 8px;
+    border: 1.5px solid transparent;
+    transition: border-color .4s, background .4s;
+  }
+  .chat.stored { border-color: var(--c-history); background: color-mix(in srgb, var(--c-history) 7%, transparent); }
+  .chat.flash { animation: flash 1.1s var(--ease) 2; }
+  @keyframes flash { 50% { background: color-mix(in srgb, var(--c-history) 22%, transparent); } }
+
+  .msg {
+    max-width: 90%;
+    padding: 6px 10px;
+    border-radius: 10px;
+    font-size: .8em;
+    line-height: 1.4;
+    flex: none;
+  }
+  .msg.user { align-self: flex-end; background: var(--ink); color: var(--card); border-bottom-right-radius: 3px; }
+  .msg.bot { align-self: flex-start; background: var(--sheet); border: 1.5px solid var(--rule); border-bottom-left-radius: 3px; }
+  .msg.err { border-color: var(--c-danger); color: var(--c-danger); }
+  .msg.more {
+    align-self: stretch;
+    max-width: none;
+    text-align: center;
+    font-family: var(--font-ui);
+    font-size: .74em;
+    color: var(--ink-2);
+    padding: 4px 0;
+    border-top: 1.5px dashed var(--rule);
+    border-bottom: 1.5px dashed var(--rule);
+    border-radius: 0;
+  }
+  .msg.file { display: flex; align-items: center; gap: 9px; font-family: var(--font-ui); }
+  .msg.file small { display: block; opacity: .75; font-size: .85em; }
+  .file-ic {
+    width: 18px; height: 23px; flex: none;
+    border: 1.5px solid currentColor;
+    border-radius: 2px;
+    background: linear-gradient(currentColor, currentColor) 3px 6px / 9px 1.5px no-repeat,
+                linear-gradient(currentColor, currentColor) 3px 10px / 9px 1.5px no-repeat,
+                linear-gradient(currentColor, currentColor) 3px 14px / 6px 1.5px no-repeat;
+  }
+  .msg[hidden] { display: none; }
+  .msg.enter { animation: msgIn .4s var(--ease) both; }
+  @keyframes msgIn {
+    from { opacity: 0; transform: translateY(10px) scale(.97); }
+    to { opacity: 1; transform: none; }
+  }
+
+  .input {
+    margin: 0 10px 10px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    border: 1.5px solid var(--rule);
+    border-radius: 8px;
+    padding: 5px 5px 5px 10px;
+    min-height: 38px;
+    font-size: .8em;
+  }
+  .input .txt { flex: 1; min-width: 0; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .input .txt:empty:not(.typing)::before { content: "Ask the helpdesk"; color: var(--ink-3); }
+  .input .txt.typing::after {
+    content: "";
+    display: inline-block;
+    width: 2px; height: 1.05em;
+    background: var(--ink);
+    margin-left: 1px;
+    vertical-align: -2px;
+    animation: blink .8s steps(1) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+  .input .send {
+    font-family: var(--font-ui);
+    font-weight: 600;
+    font-size: .9em;
+    background: var(--ink);
+    color: var(--card);
+    border-radius: 5px;
+    padding: 4px 10px;
+    transition: transform .15s;
+  }
+  .input .send.press { transform: scale(.88); }
+
+  /* ---------- network between client and server ---------- */
+  .wire { position: relative; }
+  .lane {
+    position: absolute;
+    left: 4px; right: 4px;
+    height: 2px;
+    background: repeating-linear-gradient(90deg, var(--ink-3) 0 6px, transparent 6px 12px);
+  }
+  .lane.req { top: 30%; }
+  .lane.res { top: 70%; }
+  .lane.req::after, .lane.res::after { content: ""; position: absolute; top: -5px; border: 6px solid transparent; }
+  .lane.req::after { right: -6px; border-left: 8px solid var(--ink-3); border-right: 0; }
+  .lane.res::after { left: -6px; border-right: 8px solid var(--ink-3); border-left: 0; }
+  .lane span {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: var(--font-ui);
+    font-size: .74em;
+    color: var(--ink-3);
+    white-space: nowrap;
+  }
+  .lane.req span { bottom: 8px; }
+  .lane.res span { top: 8px; }
+  .wire-cap {
+    position: absolute;
+    left: 0; right: 0; top: 50%;
+    transform: translateY(-50%);
+    text-align: center;
+    font-family: var(--font-ui);
+    font-size: .74em;
+    color: var(--ink-3);
+  }
+
+  .packet {
+    position: absolute;
+    top: 30%;
+    width: 184px;
+    transform: translateY(-50%) scale(.9);
+    opacity: 0;
+    background: var(--card);
+    border: 1.5px solid var(--frame);
+    border-radius: 8px;
+    box-shadow: 4px 4px 0 var(--shadow);
+    padding: 7px 10px 6px;
+    font-family: var(--font-ui);
+    font-size: .74em;
+    z-index: 5;
+    left: -70px;
+    transition: left 1.15s cubic-bezier(.55, .05, .3, 1), opacity .35s, transform .35s var(--ease);
+  }
+  .packet.on { opacity: 1; transform: translateY(-50%) scale(1); }
+  .packet.at-server { left: calc(100% - 110px); }
+  .packet.instant { transition: none; }
+  .packet .ph { font-weight: 700; margin-bottom: 4px; display: flex; justify-content: space-between; }
+  .packet .ph span { color: var(--ink-2); font-weight: 400; }
+  .packet .row { display: grid; grid-template-columns: 10px 1fr auto; gap: 7px; align-items: center; padding: 1px 0; }
+  .packet .row i { width: 10px; height: 10px; border-radius: 2px; }
+  .packet .row b { font-weight: 400; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .packet .tot {
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1.5px solid var(--rule);
+    display: flex;
+    justify-content: space-between;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .err-packet {
+    position: absolute;
+    top: 70%;
+    left: calc(100% - 110px);
+    width: 170px;
+    transform: translateY(-50%);
+    opacity: 0;
+    background: var(--card);
+    border: 2px solid var(--c-danger);
+    color: var(--c-danger);
+    border-radius: 8px;
+    padding: 6px 9px;
+    font-family: var(--font-ui);
+    font-size: .74em;
+    font-weight: 600;
+    z-index: 5;
+    transition: left 1s cubic-bezier(.55, .05, .3, 1), opacity .3s;
+  }
+  .err-packet.on { opacity: 1; }
+  .err-packet.at-client { left: -60px; }
+  .err-packet.instant { transition: none; }
+
+  .stream { position: absolute; top: 70%; left: 4px; right: 4px; height: 0; opacity: 0; transition: opacity .3s; }
+  .stream.on { opacity: 1; }
+  .stream i {
+    position: absolute;
+    top: -6px;
+    width: 12px; height: 12px;
+    border-radius: 2px;
+    background: var(--c-response);
+    animation: flow 1s linear infinite;
+  }
+  .stream i:nth-child(2) { animation-delay: .25s; }
+  .stream i:nth-child(3) { animation-delay: .5s; }
+  .stream i:nth-child(4) { animation-delay: .75s; }
+  .solo {
+    position: absolute;
+    top: calc(70% - 6px);
+    left: calc(100% - 12px);
+    width: 12px; height: 12px;
+    border-radius: 2px;
+    background: var(--c-response);
+    opacity: 0;
+    z-index: 4;
+  }
+  .solo.go { animation: flow 1s linear 1 both; }
+  @keyframes flow {
+    from { left: calc(100% - 12px); opacity: 0; }
+    15% { opacity: 1; }
+    85% { opacity: 1; }
+    to { left: 0; opacity: 0; }
+  }
+
+  /* =================== server: the model =================== */
+  .srv {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) minmax(92px, auto);
+    grid-template-rows: auto minmax(0, 1fr) minmax(0, .8fr) auto auto;
+    grid-template-areas:
+      "wl   status status"
+      "win  net    out"
+      "win  tray   tray"
+      "win  cache  cache"
+      "wu   meta   meta";
+    column-gap: 14px;
+    row-gap: 8px;
+    padding: 10px 14px 10px;
+    font-family: var(--font-ui);
+  }
+  .area-label { font-weight: 600; font-size: .8em; line-height: 1.2; }
+  .area-label small { display: block; font-weight: 400; color: var(--ink-3); }
+
+  /* context window column */
+  .wl { grid-area: wl; align-self: end; }
+  /* the column keeps 14% of its height free below the window, so an overflow always has room */
+  .col {
+    grid-area: win;
+    position: relative;
+    width: clamp(92px, 7.4vw, 140px);
+  }
+  .cw-box {
+    position: absolute;
+    left: 0; right: 0; top: 0;
+    height: 86%;
+    border: 2px solid var(--frame);
+    border-radius: 6px;
+    background: var(--cell-empty);
+    transition: border-color .3s;
+  }
+  .col.over .cw-box { border-color: var(--c-danger); }
+  .wu { grid-area: wu; font-size: .76em; color: var(--ink-2); }
+  .wu b { color: var(--ink); font-size: 1.3em; font-variant-numeric: tabular-nums; }
+  .wu.over b { color: var(--c-danger); }
+
+  .seg {
+    position: absolute;
+    left: 3px; right: 3px;
+    min-height: 5px;
+    border-radius: 3px;
+    color: var(--on-color);
+    font-size: .66em;
+    font-weight: 600;
+    line-height: 1.2;
+    padding: 3px 5px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    transition:
+      height .6s var(--ease) var(--d, 0s),
+      opacity .4s var(--ease) var(--d, 0s),
+      transform .4s var(--ease) var(--d, 0s);
+  }
+  .seg.slow { transition: height var(--grow, 1.8s) linear; }
+  .seg.leave { opacity: 0; transform: translateX(26px); }
+  .seg.system { background: var(--c-system); }
+  .seg.history { background: var(--c-history); }
+  .seg.docs { background: var(--c-docs); }
+  .seg.question { background: var(--c-question); }
+  .seg.response { background: var(--c-response); }
+  .seg.room {
+    background: repeating-linear-gradient(135deg,
+      color-mix(in srgb, var(--c-response) 30%, transparent) 0 3px, transparent 3px 6px);
+    border: 1.5px dashed var(--c-response);
+    color: var(--c-response);
+  }
+  .seg { z-index: 1; }
+  .over-zone {
+    position: absolute;
+    left: 0; right: 0;
+    top: 86%;
+    height: 0;
+    border: 2px dashed var(--c-danger);
+    border-top: 0;
+    border-radius: 0 0 6px 6px;
+    background: repeating-linear-gradient(135deg,
+      color-mix(in srgb, var(--c-danger) 30%, transparent) 0 4px, transparent 4px 8px);
+    opacity: 0;
+    z-index: 0;
+    transition: opacity .4s, height .6s var(--ease);
+  }
+  .col.over .over-zone { opacity: 1; }
+
+  /* status line */
+  .status { grid-area: status; display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: .86em; align-self: end; }
+  .status i { width: 10px; height: 10px; border-radius: 50%; background: var(--ink-3); flex: none; }
+  .status.reading i { background: var(--ink); animation: beat .7s ease-in-out infinite; }
+  .status.writing i { background: var(--c-response); animation: beat .5s ease-in-out infinite; }
+  .status.error { color: var(--c-danger); }
+  .status.error i { background: var(--c-danger); }
+  .status.idle { color: var(--ink-2); font-weight: 400; }
+  .status.idle i { background: var(--accent); }
+  @keyframes beat { 50% { transform: scale(1.5); opacity: .6; } }
+
+  /* the neural network */
+  .net { grid-area: net; position: relative; min-height: 0; }
+  .net svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+  /* each layer has its own colour; the reading wave takes it, the writing pass is pink */
+  .net .n0, .net .e0, .net .lt0 { --lc: var(--l1); }
+  .net .n1, .net .e1, .net .lt1 { --lc: var(--l2); }
+  .net .n2, .net .e2, .net .lt2 { --lc: var(--l3); }
+  .net .n3, .net .e3, .net .lt3, .net .e4 { --lc: var(--l4); }
+  .net .n, .net .e { --wave: var(--lc); }
+  .net.writing .n, .net.writing .e { --wave: var(--c-response); }
+  .net .e { stroke: color-mix(in srgb, var(--lc) 22%, var(--rule)); stroke-width: 1; transition: stroke .2s, stroke-width .2s; }
+  .net .e.hot { stroke: var(--wave); stroke-width: 1.7; }
+  .net .n { fill: var(--card); stroke: color-mix(in srgb, var(--lc) 65%, var(--frame)); stroke-width: 1.8; transition: fill .2s, stroke .2s; }
+  .net .n.hot { fill: var(--wave); stroke: var(--wave); filter: drop-shadow(0 0 4px color-mix(in srgb, var(--wave) 70%, transparent)); }
+  .net .lt { font-family: var(--font-ui); font-size: 11px; font-weight: 700; fill: var(--lc); text-anchor: middle; }
+  .net .loop { fill: none; stroke: var(--rule); stroke-width: 1.5; stroke-dasharray: 4 4; transition: stroke .2s; }
+  .net .loop.hot { stroke: var(--c-response); animation: dash .5s linear infinite; }
+  .net .loop-lab { font-family: var(--font-ui); font-size: 10px; fill: var(--ink-3); text-anchor: middle; }
+  @keyframes dash { to { stroke-dashoffset: -16; } }
+  .net .ft { opacity: 0; }
+  .net.feeding .ft { animation: feed .8s linear infinite; }
+  @keyframes feed {
+    from { transform: translateX(-6px); opacity: 0; }
+    25% { opacity: 1; }
+    to { transform: translateX(46px); opacity: 0; }
+  }
+  .net.busy .n { animation: busy .24s ease-in-out infinite alternate; }
+  .net.busy .n:nth-of-type(3n) { animation-delay: .08s; }
+  .net.busy .n:nth-of-type(3n+1) { animation-delay: .16s; }
+  @keyframes busy { to { fill: var(--c-response); stroke: var(--c-response); } }
+  .net-note { position: absolute; left: 0; right: 0; bottom: -2px; text-align: center; font-size: .66em; color: var(--ink-3); }
+
+  /* output */
+  .out { grid-area: out; align-self: center; text-align: center; }
+  .outbox {
+    border: 2px solid var(--rule);
+    border-radius: 8px;
+    padding: 7px 8px 8px;
+    background: var(--card);
+    transition: border-color .3s;
+  }
+  .outbox.live { border-color: var(--c-response); }
+  .outbox small { display: block; font-size: .7em; color: var(--ink-2); }
+  .outbox b {
+    display: block;
+    min-height: 1.25em;
+    font-size: 1.45em;
+    line-height: 1.25;
+    color: var(--c-response);
+    white-space: pre;
+  }
+  .outbox b.pop { animation: pop .3s var(--ease); }
+  @keyframes pop { from { transform: scale(.6); opacity: 0; } to { transform: none; opacity: 1; } }
+
+  /* working values tray */
+  .tray { grid-area: tray; min-height: 0; display: flex; flex-direction: column; gap: 5px; }
+  .tray-head { display: flex; align-items: baseline; gap: 10px; font-size: .78em; white-space: nowrap; overflow: hidden; }
+  .tray-head b { font-weight: 600; }
+  .tray-head span { color: var(--ink-3); }
+  .tray-head .same-note { color: var(--ink); display: none; align-items: center; gap: 6px; font-weight: 600; animation: capIn .4s var(--ease) both; }
+  .tray.same .tray-head .sub { display: none; }
+  .tray-head .same-note::before { content: ""; width: 16px; height: 10px; border: 2px dashed var(--ink); border-radius: 3px; }
+  .tray.same .same-note { display: inline-flex; }
+  .tray-rows {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 50px minmax(0, 1fr);
+    grid-template-rows: repeat(4, minmax(0, 1fr));
+    row-gap: 4px;
+    column-gap: 8px;
+    border: 1.5px dashed var(--rule);
+    border-radius: 6px;
+    padding: 6px 8px;
+  }
+  .tlab { font-size: .66em; font-weight: 700; color: var(--lc); align-self: center; text-align: right; white-space: nowrap; }
+  .tlab::before {
+    content: "";
+    display: inline-block;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--lc);
+    margin-right: 5px;
+    vertical-align: 1px;
+  }
+  .tsegs { display: flex; gap: 2px; min-height: 0; border-radius: 3px; transition: box-shadow .2s; }
+  .tsegs.read { box-shadow: 0 0 0 2px var(--c-response); }
+  .tseg {
+    --k: var(--ink-3);
+    height: 100%;
+    flex: none;
+    border-radius: 2px;
+    background-color: var(--k);
+    background-image: repeating-linear-gradient(90deg, transparent 0 3px, color-mix(in srgb, var(--card) 45%, transparent) 3px 4px);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform .45s var(--ease) var(--d, 0s), width var(--wdur, .5s) linear, opacity .4s;
+  }
+  .tseg.on { transform: scaleX(1); }
+  .tseg.leave { opacity: 0; }
+  .tray.instant .tseg { transition: none; }
+  .tseg.system { --k: var(--c-system); }
+  .tseg.history { --k: var(--c-history); }
+  .tseg.question { --k: var(--c-question); }
+  .tseg.response { --k: var(--c-response); }
+  .same-wrap { grid-area: 1 / 2 / span 4 / 3; position: relative; pointer-events: none; }
+  .same-box {
+    position: absolute;
+    left: -4px; top: -4px; bottom: -4px;
+    border: 2px dashed var(--ink);
+    border-radius: 5px;
+    opacity: 0;
+    transition: opacity .5s;
+  }
+  .tray.same .same-box { opacity: 1; }
+  .tray-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: .72em; color: var(--ink-2); min-height: 1.2em; }
+  .tray-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .tray-legend i { width: 9px; height: 9px; border-radius: 2px; }
+  .tray-legend b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  /* counters */
+  .meta { grid-area: meta; display: flex; align-items: baseline; gap: 6px 20px; flex-wrap: wrap; font-size: .76em; color: var(--ink-2); }
+  .meta b { color: var(--ink); font-size: 1.45em; font-variant-numeric: tabular-nums; margin-left: 4px; }
+  .meta .memo { margin-left: auto; }
+  .meta .memo strong { color: var(--ink); }
+  .memo.flash strong { animation: memoFlash 1.2s var(--ease) 2; }
+  @keyframes memoFlash { 50% { color: var(--c-danger); } }
+
+  /* ---------- callout row under the scene ---------- */
+  .callout { grid-column: 1 / -1; position: relative; min-height: 60px; }
+  .callout > div { position: absolute; inset: 0; display: flex; align-items: center; gap: 18px; }
+  .callout .big {
+    font-family: var(--font-ui);
+    font-weight: 700;
+    font-size: clamp(19px, 1.6vw, 29px);
+    line-height: 1.15;
+  }
+  .callout .small { color: var(--ink-2); font-size: .9em; max-width: 60em; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  .chip {
+    font-family: var(--font-ui);
+    font-size: .9em;
+    padding: 2px 8px 3px;
+    border-radius: 4px;
+    border: 1.5px solid var(--c-question);
+    background: color-mix(in srgb, var(--c-question) 14%, var(--card));
+    white-space: pre;
+  }
+  .chip:nth-child(even) { background: var(--card); }
+  .callout .eq { font-family: var(--font-ui); color: var(--ink-2); }
+  .callout .eq b { color: var(--ink); }
+
+  /* =================== chart layer (last step) =================== */
+  .chart {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    gap: 12px;
+    font-family: var(--font-ui);
+  }
+  .chart-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px 24px; flex-wrap: wrap; }
+  .chart-head h2 { margin: 0; font-size: 1.25em; }
+  .chart-key { display: flex; gap: 18px; font-size: .82em; color: var(--ink-2); flex-wrap: wrap; }
+  .chart-key span { display: inline-flex; align-items: center; gap: 7px; }
+  .chart-key i { width: 14px; height: 14px; border-radius: 2px; }
+  .hatch {
+    background: repeating-linear-gradient(135deg, var(--ink-3) 0 3px, color-mix(in srgb, var(--ink-3) 35%, transparent) 3px 6px);
+  }
+  .plot { position: relative; min-height: 0; margin-left: 44px; border-left: 1.5px solid var(--frame); border-bottom: 1.5px solid var(--frame); }
+  .gridline { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--rule); }
+  .gridline span { position: absolute; right: calc(100% + 8px); top: -.65em; font-size: .72em; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .bars { position: absolute; inset: 0 6px 0 6px; display: flex; align-items: flex-end; gap: 5px; }
+  .bar {
+    flex: 1;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    transform: scaleY(0);
+    transform-origin: bottom;
+    transition: transform .55s var(--ease) calc(var(--i) * 45ms + .15s);
+  }
+  .chart.is-on .bar { transform: scaleY(1); }
+  .bar .new { background: var(--c-question); border-radius: 2px 2px 0 0; }
+  .xaxis { margin-left: 50px; margin-right: 6px; display: flex; gap: 5px; font-size: .72em; color: var(--ink-3); }
+  .xaxis span { flex: 1; text-align: center; font-variant-numeric: tabular-nums; }
+  .totals { display: flex; gap: 16px 40px; align-items: flex-end; flex-wrap: wrap; border-top: 1.5px solid var(--rule); padding-top: 12px; }
+  .totals .t b { display: block; font-size: clamp(26px, 2.4vw, 42px); line-height: 1; font-variant-numeric: tabular-nums; }
+  .totals .t span { font-size: .82em; color: var(--ink-2); }
+  .totals .t.alt b { color: var(--ink-2); }
+  .totals .foot { margin-left: auto; font-size: .76em; color: var(--ink-3); max-width: 22em; font-family: var(--font-text); }
+
+  /* =================== page 02: prompt caching =================== */
+
+  /* text served from cache: outlined in the cache colour */
+  .seg.hit { box-shadow: inset 0 0 0 2.5px var(--c-cache); }
+  .seg.date { background: var(--c-danger); }
+  .tseg.date { --k: var(--c-danger); }
+  .tseg.docs { --k: var(--c-docs); }
+  .tseg.cached { box-shadow: 0 0 0 2px var(--c-cache); }
+  .tseg.fromcache { animation: fromCache 1s var(--ease); }
+  @keyframes fromCache {
+    0% { transform: translateY(30px) scaleX(1); opacity: 0; }
+    60% { opacity: 1; }
+    100% { transform: none; }
+  }
+
+  /* the prompt cache: kept between requests */
+  .cache {
+    grid-area: cache;
+    border: 2px dashed color-mix(in srgb, var(--c-cache) 55%, var(--rule));
+    border-radius: 8px;
+    padding: 6px 10px 8px;
+    display: grid;
+    gap: 5px;
+    transition: border-color .3s, background .3s;
+  }
+  .cache.has { border-style: solid; border-color: var(--c-cache); background: color-mix(in srgb, var(--c-cache) 7%, transparent); }
+  .cache-head { display: flex; align-items: baseline; gap: 10px; font-size: .78em; white-space: nowrap; overflow: hidden; }
+  .cache-head b { color: var(--c-cache); font-weight: 700; }
+  .cache-head span { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; }
+  .cache-head .cache-flag, .cache-head .ttl, .cache-head b { flex: none; }
+  .cache-head .ttl { margin-left: auto; color: var(--ink); font-weight: 700; font-variant-numeric: tabular-nums; }
+  .cache-head .ttl.low { color: var(--c-danger); }
+  .cache-bar { display: flex; gap: 2px; height: 16px; }
+  .cseg {
+    --k: var(--ink-3);
+    height: 100%;
+    border-radius: 2px;
+    background-color: var(--k);
+    background-image: repeating-linear-gradient(90deg, transparent 0 3px, color-mix(in srgb, var(--card) 45%, transparent) 3px 4px);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform .6s var(--ease) var(--d, 0s), opacity .5s;
+  }
+  .cseg.on { transform: scaleX(1); }
+  .cseg.instant { transition: none; }
+  .cseg.leave { opacity: 0; }
+  .cseg.system { --k: var(--c-system); }
+  .cseg.docs { --k: var(--c-docs); }
+  .cseg.history { --k: var(--c-history); }
+  .cseg.question { --k: var(--c-question); }
+  .cseg.date { --k: var(--c-danger); }
+  .cache.hit { animation: cacheHit 1.1s var(--ease); }
+  @keyframes cacheHit { 40% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--c-cache) 35%, transparent); } }
+  .cache.miss { animation: cacheMiss .7s var(--ease); border-color: var(--c-danger); }
+  @keyframes cacheMiss {
+    20% { transform: translateX(-5px); }
+    40% { transform: translateX(4px); }
+    60% { transform: translateX(-3px); }
+    80% { transform: translateX(2px); }
+  }
+  .cache-flag {
+    font-size: .74em;
+    font-weight: 700;
+    border-radius: 999px;
+    padding: 0 8px 1px;
+    opacity: 0;
+    transition: opacity .3s;
+  }
+  .cache-flag.on { opacity: 1; }
+  .cache-flag.hit { color: var(--on-color); background: var(--c-cache); }
+  .cache-flag.miss { color: #fff; background: var(--c-danger); }
+  .cache-flag.write { color: var(--c-cache); border: 1.5px solid var(--c-cache); }
+
+  /* billing line */
+  .meta .bill b { color: var(--c-cache); }
+  .meta .bill small { color: var(--ink-3); margin-left: 4px; }
+
+  /* the cache marker inside a request packet */
+  .packet .mk {
+    margin: 3px 0;
+    border-top: 2px dashed var(--c-cache);
+    color: var(--c-cache);
+    font-size: .86em;
+    font-weight: 700;
+    padding-top: 1px;
+  }
+  .packet .row.d i { background: var(--c-danger); }
+
+  /* the app's stable beginning, in the client */
+  .sys-chip .policy { color: var(--c-docs); font-weight: 600; }
+
+  /* clock shown while time passes */
+  .clock {
+    position: absolute;
+    left: 36%; top: 42%;
+    transform: translate(-50%, -50%) scale(.9);
+    z-index: 6;
+    background: var(--card);
+    border: 2px solid var(--c-cache);
+    border-radius: 12px;
+    padding: 10px 18px;
+    text-align: center;
+    font-family: var(--font-ui);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .3s, transform .3s var(--ease);
+  }
+  .clock.on { opacity: 1; transform: translate(-50%, -50%); }
+  .clock b { display: block; font-size: 1.8em; font-variant-numeric: tabular-nums; }
+  .clock span { font-size: .8em; color: var(--ink-2); }
+
+  /* =================== explainer layers =================== */
+  .explain {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    gap: 18px;
+    font-family: var(--font-ui);
+  }
+  .explain h2 { margin: 0; font-size: 1.3em; }
+  .explain .lead { margin: 4px 0 0; font-family: var(--font-text); color: var(--ink-2); max-width: 54em; }
+  .explain .foot { font-size: .78em; color: var(--ink-3); font-family: var(--font-text); }
+
+  .reqs { display: grid; gap: 26px; align-content: center; }
+  .req { display: grid; grid-template-columns: 9.5em minmax(0, 1fr); gap: 16px; align-items: center; }
+  .req-name { font-weight: 700; }
+  .req-name small { display: block; font-weight: 400; color: var(--ink-2); font-size: .82em; }
+  .rbar { position: relative; display: flex; gap: 2px; height: 48px; }
+  .rbar > span {
+    height: 100%;
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    font-size: .78em;
+    font-weight: 600;
+    color: var(--on-color);
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .rbar .system { background: var(--c-system); }
+  .rbar .docs { background: var(--c-docs); }
+  .rbar .history { background: var(--c-history); }
+  .rbar .question { background: var(--c-question); }
+  .rbar .date { background: var(--c-danger); color: #fff; }
+  .rbar .tools { background: var(--c-tools); }
+  .rbar .cachedpart { box-shadow: inset 0 0 0 3px var(--c-cache); }
+  .rbar .missed { opacity: .45; }
+  .rbar > .marker {
+    overflow: visible;
+    position: absolute;
+    top: -12px; bottom: -12px;
+    width: 0;
+    border-left: 3px dashed var(--c-cache);
+    padding: 0;
+  }
+  .rbar .marker::after {
+    content: "cache marker";
+    position: absolute;
+    top: -18px; left: -40px;
+    width: 80px;
+    text-align: center;
+    font-size: .72em;
+    font-weight: 700;
+    color: var(--c-cache);
+  }
+  .verdict { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; margin-top: 8px; font-size: .9em; }
+  .verdict.ok { color: var(--c-cache); }
+  .verdict.bad { color: var(--c-danger); }
+  .brace { display: flex; gap: 2px; margin-top: 6px; font-size: .76em; color: var(--ink-2); }
+  .brace span { border-top: 2px solid currentColor; padding-top: 3px; text-align: center; }
+  .brace .c { color: var(--c-cache); }
+  .brace .n { color: var(--ink-2); }
+
+  .rule-list { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: .9em; }
+  .rule-list .tk { background: var(--card); border: 1.5px solid var(--rule); border-radius: 6px; padding: 3px 9px; }
+  .rule-list .arrow { color: var(--ink-3); }
+
+  /* price table */
+  .prices { width: 100%; border-collapse: collapse; font-size: .92em; align-self: center; }
+  .prices th, .prices td { text-align: left; padding: 12px 14px; border-bottom: 1.5px solid var(--rule); vertical-align: top; }
+  .prices th { font-size: .8em; color: var(--ink-2); font-weight: 600; }
+  .prices td:first-child { font-weight: 700; white-space: nowrap; }
+  .prices td b { color: var(--c-cache); }
+  .prices td small { display: block; color: var(--ink-3); font-family: var(--font-text); margin-top: 2px; }
+
+  /* the 20-question chart reuses page 01's chart styles */
+  .bar-c .cachepart { background: color-mix(in srgb, var(--c-cache) 75%, var(--card)); }
+
+  /* =================== page 06: where RAG stops working =================== */
+  :root { --c-doc2: color-mix(in srgb, var(--c-docs) 70%, var(--c-danger)); --c-doc3: color-mix(in srgb, var(--c-docs) 70%, #ffffff); --c-org: var(--c-history); }
+
+  .cards5 { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; align-content: center; }
+  .pcard { border: 1.5px solid color-mix(in srgb, var(--c-danger) 45%, var(--rule)); border-radius: 10px; background: color-mix(in srgb, var(--c-danger) 5%, var(--sheet)); padding: 14px 14px 16px; display: grid; gap: 6px; align-content: start; }
+  .pcard .num-badge { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--c-danger); color: #fff; font-weight: 700; }
+  .pcard b { font-size: 1.05em; }
+  .pcard span { font-family: var(--font-text); color: var(--ink-2); font-size: .9em; }
+
+  .two { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 26px; min-height: 0; align-items: center; }
+  .qbox { border: 2px solid var(--c-question); border-radius: 10px; padding: 10px 14px; background: color-mix(in srgb, var(--c-question) 8%, var(--card)); font-weight: 700; }
+  .qbox small { display: block; font-weight: 400; color: var(--ink-2); font-size: .8em; margin-bottom: 2px; }
+  .facts { display: grid; gap: 8px; margin-top: 12px; }
+  .fact { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 10px; align-items: start; border: 1.5px solid var(--rule); border-radius: 8px; padding: 8px 10px; background: var(--sheet); font-size: .9em; }
+  .fact i { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-style: normal; font-weight: 700; color: var(--on-color); }
+  .fact.found { border-color: var(--p-rag); }
+  .fact.found i { background: var(--p-rag); }
+  .fact.missing { border-color: var(--c-danger); border-style: dashed; }
+  .fact.missing i { background: var(--c-danger); color: #fff; }
+  .fact small { display: block; color: var(--ink-2); font-family: var(--font-text); }
+  .answer { margin-top: 12px; border-left: 4px solid var(--c-response); padding: 6px 12px; font-family: var(--font-text); }
+  .answer b { font-family: var(--font-ui); display: block; font-size: .8em; color: var(--c-response); }
+
+  .space { width: 100%; max-height: 100%; border: 1.5px solid var(--rule); border-radius: 10px; background: color-mix(in srgb, var(--paper) 50%, transparent); font-family: var(--font-ui); }
+  .space .clab { font-size: 10px; font-weight: 700; fill: var(--ink-2); }
+  .space .star { fill: var(--c-question); stroke: var(--card); stroke-width: 1.5; }
+  .space .qlab { font-size: 10px; font-weight: 700; fill: var(--c-question); }
+  .space .ring { fill: none; stroke: var(--c-question); stroke-width: 1.5; stroke-dasharray: 3 4; }
+  .space .need { fill: none; stroke: var(--c-danger); stroke-width: 2.5; }
+  .space .needlab { font-size: 10px; font-weight: 700; fill: var(--c-danger); }
+  .space .hitring { fill: none; stroke: var(--ink); stroke-width: 2; }
+
+  .sea { display: grid; grid-template-columns: repeat(40, 1fr); gap: 2px; align-self: center; }
+  .sea i { aspect-ratio: 1; border-radius: 1px; background: color-mix(in srgb, var(--c-docs) 30%, var(--cell-empty)); }
+  .sea i.lit { background: var(--p-rag); outline: 2px solid var(--ink); }
+  .stat-row { display: flex; gap: 36px; flex-wrap: wrap; align-items: flex-end; }
+  .stat-row .t b { display: block; font-size: clamp(28px, 2.6vw, 46px); line-height: 1; font-variant-numeric: tabular-nums; }
+  .stat-row .t span { color: var(--ink-2); font-size: .88em; }
+  .stat-row .t.warn b { color: var(--c-danger); }
+
+  .records { width: 100%; border-collapse: collapse; font-size: .9em; }
+  .records th, .records td { text-align: left; padding: 6px 10px; border-bottom: 1.5px solid var(--rule); }
+  .records th { font-size: .8em; color: var(--ink-2); }
+  .records td.n { font-variant-numeric: tabular-nums; text-align: right; }
+  .records tr.yes td { color: var(--c-question); font-weight: 700; }
+  .records tr.picked td:first-child::before { content: "retrieved "; font-size: .72em; color: var(--p-rag); font-weight: 700; margin-right: 4px; }
+
+  .versions { display: grid; gap: 10px; }
+  .ver { border: 1.5px solid var(--rule); border-radius: 8px; padding: 10px 12px; background: var(--sheet); display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; font-size: .9em; }
+  .ver b { font-weight: 700; }
+  .ver .sc { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .ver small { grid-column: 1 / -1; color: var(--ink-2); font-family: var(--font-text); }
+  .ver.bad { border-color: var(--c-danger); }
+  .ver.bad .sc { color: var(--c-danger); }
+  .ver.good { border-color: var(--c-question); }
+
+  .health { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 26px; align-content: center; }
+  .health li { border-left: 4px solid var(--p-rag); padding: 4px 0 4px 12px; }
+  .health b { display: block; }
+  .health span { font-family: var(--font-text); color: var(--ink-2); font-size: .9em; }
+
+  .mini-graph { width: 100%; max-height: 100%; }
+  .mini-graph .e { stroke: var(--p-kag); stroke-width: 3; stroke-dasharray: 260; stroke-dashoffset: 260; transition: stroke-dashoffset 1s var(--ease) var(--d, 0s); }
+  .is-on .mini-graph .e { stroke-dashoffset: 0; }
+  .mini-graph .n { fill: var(--card); stroke: var(--p-kag); stroke-width: 3; }
+  .mini-graph .n.q { stroke: var(--c-question); }
+  .mini-graph text { font-family: var(--font-ui); font-size: 13px; font-weight: 700; fill: var(--ink); }
+  .mini-graph .el { font-size: 11px; fill: var(--p-kag); }
+
+  /* =================== page 07: problems with fixes =================== */
+  .groups { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 3fr); gap: 26px; align-content: center; }
+  .grp h3 { margin: 0 0 10px; font-size: 1.02em; }
+  .grp.fix h3 { color: var(--p-rag); }
+  .grp.hard h3 { color: var(--c-danger); }
+  .gcards { display: grid; gap: 10px; }
+  .grp.fix .gcards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .grp.hard .gcards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .gcard { --gc: var(--p-rag); border: 1.5px solid color-mix(in srgb, var(--gc) 45%, var(--rule)); border-radius: 10px; background: color-mix(in srgb, var(--gc) 5%, var(--sheet)); padding: 11px 13px; display: grid; gap: 4px; align-content: start; }
+  .grp.hard .gcard { --gc: var(--c-danger); }
+  .gcard b { font-size: .98em; }
+  .gcard span { font-family: var(--font-text); color: var(--ink-2); font-size: .86em; }
+  .gcard em { font-style: normal; font-size: .8em; color: var(--gc); font-weight: 700; }
+
+  .pf { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; min-height: 0; align-content: center; align-items: start; }
+  .pane { --pc: var(--c-danger); border: 1.5px solid var(--rule); border-left: 5px solid var(--pc); border-radius: 10px; padding: 13px 16px; background: var(--sheet); display: grid; gap: 10px; align-content: start; }
+  .pane.fixp { --pc: var(--c-question); }
+  .pane h3 { margin: 0; font-size: 1em; color: var(--pc); }
+  .pane p { margin: 0; font-family: var(--font-text); color: var(--ink-2); font-size: .9em; }
+
+  .ck { --cc: var(--p-rag); position: relative; border: 2px solid var(--cc); border-radius: 7px; padding: 6px 10px; background: color-mix(in srgb, var(--cc) 9%, var(--card)); font-family: var(--font-text); font-size: .9em; line-height: 1.45; }
+  .ck > small { display: block; font-family: var(--font-ui); font-weight: 700; color: var(--cc); font-size: .82em; }
+  .ck.b { --cc: var(--c-history); }
+  .ck .bad { background: color-mix(in srgb, var(--c-danger) 25%, transparent); border-radius: 3px; }
+  .cutl { display: flex; align-items: center; gap: 8px; color: var(--c-danger); font-weight: 700; font-size: .8em; margin: -4px 0; }
+  .cutl::before, .cutl::after { content: ""; flex: 1; border-top: 2.5px dashed var(--c-danger); }
+  .ctxl { border-left: 3px solid var(--c-cache); padding-left: 8px; color: var(--ink-2); }
+  .ctxl b { display: block; font-family: var(--font-ui); color: var(--c-cache); font-size: .82em; }
+  .tags { display: flex; flex-wrap: wrap; gap: 5px; }
+  .tags span { font-size: .8em; border: 1.5px solid var(--rule); border-radius: 999px; padding: 1px 8px; background: var(--card); }
+  .tags span i { font-style: normal; color: var(--ink-3); margin-right: 4px; }
+
+  .rl { display: grid; gap: 5px; }
+  .rl h4 { margin: 0; font-size: .82em; color: var(--ink-2); font-weight: 700; }
+  .rr { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 5px 9px; border: 1.5px solid var(--rule); border-radius: 7px; background: var(--card); font-size: .86em; }
+  .rr .k { font-weight: 700; color: var(--ink-3); }
+  .rr .t { font-family: var(--font-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rr .t b { font-family: var(--font-ui); }
+  .rr .s { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .rr.good { border-color: var(--c-question); }
+  .rr.good .k, .rr.good .s { color: var(--c-question); }
+  .rr.bad { border-color: var(--c-danger); }
+  .rr.bad .s { color: var(--c-danger); }
+  .rr.gone { opacity: .45; text-decoration: line-through; text-decoration-color: var(--c-danger); }
+  .rr.gap { border-style: dashed; background: transparent; }
+  .lists2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+  .merge { text-align: center; color: var(--ink-3); font-weight: 700; font-size: .82em; }
+  .stg { display: grid; gap: 4px; }
+  .stg > b { font-size: .86em; }
+
+  .stale { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 10px; align-items: center; }
+  .sbox { border: 1.5px solid var(--rule); border-left: 4px solid var(--sc, var(--c-docs)); border-radius: 7px; padding: 7px 10px; background: var(--card); font-size: .86em; }
+  .sbox small { display: block; color: var(--ink-3); }
+  .sbox .old { color: var(--c-danger); font-weight: 700; }
+  .neq { color: var(--c-danger); font-weight: 700; font-size: 1.4em; }
+  .steps4 { display: grid; gap: 6px; counter-reset: s; }
+  .steps4 div { counter-increment: s; display: grid; grid-template-columns: 24px minmax(0, 1fr); column-gap: 8px; row-gap: 1px; align-items: start; font-size: .9em; }
+  .steps4 div::before { content: counter(s); width: 22px; height: 22px; border-radius: 50%; background: var(--c-question); color: var(--on-color); display: grid; place-items: center; font-weight: 700; font-size: .82em; }
+  .steps4 div::before { grid-row: 1 / span 2; }
+  .steps4 b, .steps4 span { grid-column: 2; }
+  .steps4 span { font-family: var(--font-text); color: var(--ink-2); }
+  .also { display: grid; gap: 4px; font-size: .86em; border-top: 1.5px dashed var(--rule); padding-top: 8px; }
+  .also span { font-family: var(--font-text); color: var(--ink-2); }
+
+  .chatx { display: grid; gap: 6px; font-size: .9em; }
+  .chatx .u, .chatx .a { max-width: 85%; padding: 6px 10px; border-radius: 9px; }
+  .chatx .u { justify-self: end; background: var(--ink); color: var(--card); }
+  .chatx .a { justify-self: start; background: var(--card); border: 1.5px solid var(--rule); }
+  .tq { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 8px; align-items: center; border-bottom: 1px dashed var(--rule); padding: 3px 0; font-size: .88em; }
+  .tq.h { color: var(--ink-3); font-size: .78em; }
+  .tq span:first-child { font-family: var(--font-text); }
+  .tq .ok { color: var(--c-question); font-weight: 700; }
+  .tq .no { color: var(--c-danger); font-weight: 700; }
+  .rc { display: flex; align-items: baseline; gap: 10px; }
+  .rc b { font-size: 2.2em; line-height: 1; color: var(--p-rag); font-variant-numeric: tabular-nums; }
+  .rc span { color: var(--ink-2); font-family: var(--font-text); }
+</style>
+</head>
+<body data-prev="06-rag.html" data-next="08-kag.html" data-topic="07">
+<div class="deck">
+  <header class="topbar">
+    <span class="sec">07</span>
+    <span class="name">Where RAG stops working</span>
+    <span class="spacer"></span>
+    <a href="index.html">Agenda</a>
+  </header>
+
+  <main class="layout tl">
+    <aside class="tl-col">
+      <div class="tl-head">
+        <h1>Where RAG stops working</h1>
+        <p class="sub">Some problems have known fixes. Some are built into the design.</p>
+      </div>
+      <ol id="timeline" class="timeline"></ol>
+    </aside>
+
+    <section class="stage" aria-label="Animation">
+
+      <!-- 0: overview -->
+      <div class="layer explain" data-show="0">
+        <div>
+          <h2>Two kinds of RAG problems</h2>
+          <p class="lead">Some come from how the pipeline is built, and better engineering fixes them. Others come from the design itself: the model only sees the few chunks that look most like the question.</p>
+        </div>
+        <div class="groups">
+          <div class="grp fix">
+            <h3>Fixable with better retrieval</h3>
+            <div class="gcards">
+              <div class="gcard" data-show="0" data-anim="up"><em>1</em><b>Chunks that don't stand alone</b><span>Cut mid-rule, or missing what they're about.</span></div>
+              <div class="gcard" data-show="0" data-anim="up" style="--delay:.08s"><em>2</em><b>Exact names and codes missed</b><span>Vectors capture meaning, not "HR-17".</span></div>
+              <div class="gcard" data-show="0" data-anim="up" style="--delay:.16s"><em>3</em><b>Similar isn't relevant</b><span>Old versions and near-misses rank first.</span></div>
+              <div class="gcard" data-show="0" data-anim="up" style="--delay:.24s"><em>4</em><b>A stale index</b><span>The file changed; the chunks didn't.</span></div>
+              <div class="gcard" data-show="0" data-anim="up" style="--delay:.32s"><em>5</em><b>No way to tell it works</b><span>Answers read well while the right chunk never arrived.</span></div>
+            </div>
+          </div>
+          <div class="grp hard">
+            <h3>Built into the design</h3>
+            <div class="gcards">
+              <div class="gcard" data-show="0" data-anim="up" style="--delay:.45s"><em>6</em><b>Connected facts</b><span>The answer is a chain across documents.</span></div>
+              <div class="gcard" data-show="0" data-anim="up" style="--delay:.53s"><em>7</em><b>The whole collection</b><span>"Main themes?" can't come from five chunks.</span></div>
+              <div class="gcard" data-show="0" data-anim="up" style="--delay:.61s"><em>8</em><b>Logic and numbers</b><span>Similarity can't apply "more than 10".</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="foot">Each fixable problem is shown first, then its fix. The last three lead to KAG and GraphRAG.</div>
+      </div>
+
+      <!-- 1-2: chunks that don't stand alone -->
+      <div class="layer explain" data-show="1-2">
+        <div>
+          <h2>1. Chunks that don't stand alone</h2>
+          <p class="lead">Cutting every 60 words is simple, but the cut falls wherever it falls.</p>
+        </div>
+        <div class="pf">
+          <div class="pane prob">
+            <h3>Problem: fixed-size cuts</h3>
+            <div class="ck"><small>Chunk 12</small>…25 days of paid leave. <b>4. Carry-over.</b> Up to 5 unused days may be carried into the next year. They must be used by</div>
+            <div class="cutl">cut</div>
+            <div class="ck b"><small>Chunk 13</small><span class="bad">31 March and need the line manager's approval.</span> <b>5. Sick leave.</b> Report your absence on the first day…</div>
+            <p>Chunk 12 mixes two topics. Chunk 13 says "by 31 March" without saying what for, so a question about carry-over may never find it.</p>
+          </div>
+          <div class="pane fixp" data-show="2" data-anim="left">
+            <h3>Fix: cut by structure, then add context</h3>
+            <div class="ck">
+              <div class="ctxl"><b>Context, written by an LLM</b>From ACME's 2025 Leave Policy, section 4, on carrying over unused leave.</div>
+              <b>4. Carry-over.</b> Up to 5 unused days may be carried into the next year. They must be used by 31 March and need the line manager's approval.
+            </div>
+            <div class="tags"><span><i>source</i>Leave policy</span><span><i>section</i>4</span><span><i>version</i>2025</span><span><i>audience</i>all staff</span></div>
+            <p>One section, one chunk. A short context line says where it comes from, and labels allow filters and citations.</p>
+          </div>
+        </div>
+        <div class="foot" data-show="2">Anthropic's Contextual Retrieval (Sept 2024): adding 50 to 100 tokens of context to each chunk cut failed retrievals by 35%; by 49% when combined with keyword search, and 67% with reranking too.</div>
+      </div>
+
+      <!-- 3-4: exact names and codes -->
+      <div class="layer explain" data-show="3-4">
+        <div>
+          <h2>2. Exact names and codes are missed</h2>
+          <p class="lead">"Who signs form HR-17?" To a vector, "HR-17" means little: every chunk about forms looks alike.</p>
+        </div>
+        <div class="pf">
+          <div class="pane prob">
+            <h3>Problem: vector search alone</h3>
+            <div class="rl">
+              <div class="rr"><span class="k">1</span><span class="t"><b>Forms</b> General rules for forms and approvals</span><span class="s">0.82</span></div>
+              <div class="rr"><span class="k">2</span><span class="t"><b>Leave §2</b> How to submit a leave request form</span><span class="s">0.80</span></div>
+              <div class="rr"><span class="k">3</span><span class="t"><b>Expenses §3</b> Who approves expense form EX-2</span><span class="s">0.79</span></div>
+              <div class="rr gap"><span class="k">…</span><span class="t">5 more</span><span class="s"></span></div>
+              <div class="rr bad"><span class="k">9</span><span class="t"><b>Leave §6</b> Form HR-17 is signed by the HR director</span><span class="s">0.71</span></div>
+            </div>
+            <p>The one chunk that answers ranks 9th, outside the top 3.</p>
+          </div>
+          <div class="pane fixp" data-show="4" data-anim="left">
+            <h3>Fix: hybrid search</h3>
+            <div class="lists2">
+              <div class="rl"><h4>Keyword search</h4>
+                <div class="rr good"><span class="k">1</span><span class="t"><b>Leave §6</b> HR-17</span><span class="s"></span></div>
+                <div class="rr"><span class="k">2</span><span class="t"><b>Forms</b> form</span><span class="s"></span></div>
+              </div>
+              <div class="rl"><h4>Vector search</h4>
+                <div class="rr"><span class="k">1</span><span class="t"><b>Forms</b></span><span class="s"></span></div>
+                <div class="rr"><span class="k">2</span><span class="t"><b>Leave §2</b></span><span class="s"></span></div>
+              </div>
+            </div>
+            <div class="merge">↓ merged into one ranking</div>
+            <div class="rl">
+              <div class="rr good"><span class="k">1</span><span class="t"><b>Leave §6</b> Form HR-17 is signed by the HR director</span><span class="s">✓</span></div>
+              <div class="rr"><span class="k">2</span><span class="t"><b>Forms</b> General rules for forms and approvals</span><span class="s"></span></div>
+              <div class="rr"><span class="k">3</span><span class="t"><b>Leave §2</b> How to submit a leave request form</span><span class="s"></span></div>
+            </div>
+          </div>
+        </div>
+        <div class="foot" data-show="4">Keyword search (usually BM25) catches names, codes and numbers; vectors catch meaning. Most search engines and vector databases can run both and merge the results.</div>
+      </div>
+
+      <!-- 5-6: similar isn't relevant -->
+      <div class="layer explain" data-show="5-6">
+        <div>
+          <h2>3. Similar isn't relevant</h2>
+          <p class="lead">"How many unused days can I carry over?" The top result is confidently wrong.</p>
+        </div>
+        <div class="pf">
+          <div class="pane prob">
+            <h3>Problem: the top 3 by similarity</h3>
+            <div class="rl">
+              <div class="rr bad"><span class="k">1</span><span class="t"><b>Leave policy 2023</b> Up to 3 unused days…</span><span class="s">0.90</span></div>
+              <div class="rr good"><span class="k">2</span><span class="t"><b>Leave policy 2025</b> Up to 5 unused days…</span><span class="s">0.89</span></div>
+              <div class="rr bad"><span class="k">3</span><span class="t"><b>Expenses §7</b> Unused travel budget does not carry over</span><span class="s">0.74</span></div>
+            </div>
+            <p>The replaced 2023 policy is still in the index and wins by a hair. A travel rule sneaks in on shared words.</p>
+          </div>
+          <div class="pane fixp" data-show="6" data-anim="left">
+            <h3>Fix: filter by labels, then rerank</h3>
+            <div class="stg"><b>1. Filter: version = current</b>
+              <div class="rr gone"><span class="k"></span><span class="t"><b>Leave policy 2023</b> Up to 3 unused days…</span><span class="s"></span></div>
+            </div>
+            <div class="stg"><b>2. Rerank: a second model reads the question with each chunk</b>
+              <div class="rr good"><span class="k">1</span><span class="t"><b>Leave policy 2025</b> Up to 5 unused days…</span><span class="s">0.96</span></div>
+              <div class="rr gone"><span class="k">2</span><span class="t"><b>Expenses §7</b> Unused travel budget…</span><span class="s">0.08</span></div>
+            </div>
+            <p>The same labels also enforce permissions: a user only gets chunks they're allowed to see.</p>
+          </div>
+        </div>
+        <div class="foot" data-show="6">Rerankers (cross-encoders) are slower than vector search, so a common pattern is: fetch 20 to 50 candidates cheaply, rerank them, send the best few.</div>
+      </div>
+
+      <!-- 7-8: a stale index -->
+      <div class="layer explain" data-show="7-8">
+        <div>
+          <h2>4. A stale index</h2>
+          <p class="lead">The leave policy was updated for 2026: carry-over is now 7 days. Nobody re-ran the pipeline.</p>
+        </div>
+        <div class="pf">
+          <div class="pane prob">
+            <h3>Problem: the file changed, the chunks didn't</h3>
+            <div class="stale">
+              <div class="sbox"><small>The file</small><b>Leave policy, 2026</b><br>Up to <b>7</b> unused days</div>
+              <span class="neq">≠</span>
+              <div class="sbox" style="--sc:var(--p-rag)"><small>The vector database</small><b>Leave §4, 2025</b><br>Up to <span class="old">5</span> unused days</div>
+            </div>
+            <div class="chatx"><div class="u">How many days can I carry over?</div><div class="a">Up to 5 days. [Leave policy §4]</div></div>
+            <p>Correctly retrieved, correctly cited, and wrong.</p>
+          </div>
+          <div class="pane fixp" data-show="8" data-anim="left">
+            <h3>Fix: keep the index in sync</h3>
+            <div class="steps4">
+              <div><b>Detect the change</b><span>Compare each file's fingerprint (hash) with the last run.</span></div>
+              <div><b>Delete its old chunks</b><span>Every row from the leave policy goes.</span></div>
+              <div><b>Run only that file again</b><span>Chunk, embed, store, as on page 05.</span></div>
+              <div><b>Leave the rest alone</b><span>The other 32 chunks are untouched.</span></div>
+            </div>
+            <div class="also"><b>Also plan for</b><span>Deleted files (delete their chunks), permission changes (update labels), and a new embedding model (re-embed everything, then switch).</span></div>
+          </div>
+        </div>
+        <div class="foot" data-show="8">Stale chunks are one of the most common causes of confident, cited, wrong answers.</div>
+      </div>
+
+      <!-- 9-10: no way to tell -->
+      <div class="layer explain" data-show="9-10">
+        <div>
+          <h2>5. No way to tell if it works</h2>
+          <p class="lead">An answer can read perfectly while the right chunk never reached the model.</p>
+        </div>
+        <div class="pf">
+          <div class="pane prob">
+            <h3>Problem: judging answers by eye</h3>
+            <div class="chatx"><div class="u">My laptop was stolen. What do I do?</div><div class="a">Tell your line manager as soon as possible.</div></div>
+            <p>Sounds reasonable. But IT handbook §8 says: report to IT security within one hour so the device can be locked. That chunk was never retrieved, and nobody noticed.</p>
+          </div>
+          <div class="pane fixp" data-show="10" data-anim="left">
+            <h3>Fix: test retrieval on its own</h3>
+            <div class="tq h"><span>Test question</span><span>Chunk it should find</span><span>In top 3?</span></div>
+            <div class="tq"><span>Carry unused leave?</span><span>Leave §4</span><span class="ok">yes</span></div>
+            <div class="tq"><span>Part-time allowance?</span><span>Leave §3</span><span class="ok">yes</span></div>
+            <div class="tq"><span>Taxi to the airport?</span><span>Expenses §5</span><span class="ok">yes</span></div>
+            <div class="tq"><span>Stolen laptop?</span><span>IT §8</span><span class="no">no</span></div>
+            <div class="tq"><span>Who signs HR-17?</span><span>Leave §6</span><span class="ok">yes</span></div>
+            <div class="rc"><b class="num">80%</b><span>found in the top 3. Fix the miss, then re-test after every change.</span></div>
+          </div>
+        </div>
+        <div class="foot" data-show="10">This measure is called recall at k (here k = 3). Test retrieval before judging answers: an answer can't be better than the chunks it was given.</div>
+      </div>
+
+      <!-- 11-12: connected facts -->
+      <div class="layer explain" data-show="11-12">
+        <div>
+          <h2>6. Connected facts</h2>
+          <p class="lead">The answer needs two facts. Only one of them looks like the question.</p>
+        </div>
+        <div class="two">
+          <div>
+            <div class="qbox"><small>Question from someone in Sales</small>Who approves my carry-over request?</div>
+            <div class="facts">
+              <div class="fact found" data-show="11-12" data-anim="left"><i>1</i><div>Carry-over is approved by the employee's line manager.<small>Leave policy §4: close to the question, retrieved</small></div></div>
+              <div class="fact missing" data-show="12" data-anim="left"><i>2</i><div>The Sales team's line manager is Sara Ahmed.<small>Org chart: needed, but nothing like the question, so not retrieved</small></div></div>
+            </div>
+            <div class="answer" data-show="12"><b>The model's answer</b>Your line manager approves it. (It can't say who.)</div>
+          </div>
+          <svg class="space" id="space6" viewBox="0 0 360 190" preserveAspectRatio="xMidYMid meet" aria-label="The question lands near the leave policy; the org chart chunk it needs is far away">
+            <g id="dots6"></g>
+            <text class="clab" x="30" y="122">Leave policy</text>
+            <text class="clab" x="196" y="20">Expenses</text>
+            <text class="clab" x="146" y="182">IT handbook</text>
+            <text class="clab" x="282" y="150">Org chart</text>
+            <circle class="ring" cx="112" cy="72" r="32"/>
+            <path class="star" d="M112 61 l3.2 6.6 7.3 1 -5.3 5.1 1.3 7.2 -6.5 -3.4 -6.5 3.4 1.3 -7.2 -5.3 -5.1 7.3 -1 z"/>
+            <text class="qlab" x="112" y="34" text-anchor="middle">question</text>
+            <g data-show="12">
+              <circle class="need" cx="306" cy="104" r="11"/>
+              <text class="needlab" x="306" y="84" text-anchor="middle">needed fact</text>
+            </g>
+          </svg>
+        </div>
+        <div class="foot" data-show="12">Fact 2 only becomes relevant once fact 1 is known. The KAG paper puts it plainly: "simple vector-based retrieval is not suitable for multi-step reasoning". Searching, reading and searching again helps, at the cost of more model calls and time.</div>
+      </div>
+
+      <!-- 13: the whole collection -->
+      <div class="layer explain" data-show="13">
+        <div>
+          <h2>7. Questions about the whole collection</h2>
+          <p class="lead">"What are the main complaints in three years of employee feedback?" The answer is spread across everything. Retrieval brings back a handful.</p>
+        </div>
+        <div class="sea" id="sea"></div>
+        <div class="stat-row">
+          <div class="t"><b class="num">20,000</b><span>feedback chunks</span></div>
+          <div class="t warn"><b class="num">5</b><span>retrieved for the answer</span></div>
+          <div class="t"><b class="num">0.025%</b><span>of the collection seen</span></div>
+        </div>
+        <div class="foot">The GraphRAG paper (Microsoft, 2024) calls these "global" questions: they are summarisation over the whole corpus, not retrieval, and plain RAG fails on them.</div>
+      </div>
+
+      <!-- 14: logic and numbers -->
+      <div class="layer explain" data-show="14">
+        <div>
+          <h2>8. Logic, numbers and rules</h2>
+          <p class="lead">"Which teams average more than 10 unused leave days?" Every row looks equally similar to the question. Similarity can't apply "more than 10".</p>
+        </div>
+        <div class="two">
+          <table class="records">
+            <thead><tr><th>Team record</th><th>Average unused days</th></tr></thead>
+            <tbody>
+              <tr class="yes picked"><td>Sales</td><td class="n">12.4</td></tr>
+              <tr class="picked"><td>Finance</td><td class="n">6.1</td></tr>
+              <tr class="yes"><td>IT</td><td class="n">11.2</td></tr>
+              <tr class="picked"><td>HR</td><td class="n">4.0</td></tr>
+              <tr><td>Operations</td><td class="n">9.8</td></tr>
+            </tbody>
+          </table>
+          <div>
+            <div class="answer"><b>The model's answer, from the 3 retrieved rows</b>Sales. (IT is missing: its row wasn't retrieved.)</div>
+            <p class="lead" style="margin-top:14px">Counting, comparing, dates and rules need the data treated as data, not as text that sounds similar.</p>
+          </div>
+        </div>
+        <div class="foot">The KAG paper notes that vector similarity is "insensitive to knowledge logic, such as numerical values, temporal relations, expert rules".</div>
+      </div>
+
+      <!-- 15: bridge -->
+      <div class="layer explain" data-show="15">
+        <div>
+          <h2>What if the links were stored, not guessed?</h2>
+          <p class="lead">Text chunks hide the connections between facts. A <strong>knowledge graph</strong> stores them explicitly, so a question can follow them.</p>
+        </div>
+        <svg class="mini-graph" viewBox="0 0 900 190" preserveAspectRatio="xMidYMid meet" aria-label="You, works in, Sales team, managed by, Sara, approves, Carry-over">
+          <line class="e" x1="90" y1="100" x2="330" y2="100" style="--d:.1s"/>
+          <line class="e" x1="330" y1="100" x2="570" y2="100" style="--d:.5s"/>
+          <line class="e" x1="570" y1="100" x2="810" y2="100" style="--d:.9s"/>
+          <text class="el" x="210" y="88" text-anchor="middle">works in</text>
+          <text class="el" x="450" y="88" text-anchor="middle">managed by</text>
+          <text class="el" x="690" y="88" text-anchor="middle">approves</text>
+          <circle class="n q" cx="90" cy="100" r="16"/>
+          <circle class="n" cx="330" cy="100" r="16"/>
+          <circle class="n" cx="570" cy="100" r="16"/>
+          <circle class="n" cx="810" cy="100" r="16"/>
+          <text x="90" y="140" text-anchor="middle">You</text>
+          <text x="330" y="140" text-anchor="middle">Sales team</text>
+          <text x="570" y="140" text-anchor="middle">Sara Ahmed</text>
+          <text x="810" y="140" text-anchor="middle">Carry-over</text>
+        </svg>
+        <div class="foot">Two ways to build on this idea come next: KAG, for precise answers that follow connections and rules, and GraphRAG, for questions about a whole collection.</div>
+      </div>
+
+    </section>
+  </main>
+</div>
+
+<script src="assets/session.js?v=7"></script>
+<script src="assets/deck.js?v=6"></script>
+<script>
+(function () {
+  // dots in the meaning space for steps 11-12
+  const CL = [
+    { c: "var(--c-docs)", x: 62, y: 86, n: 14 },
+    { c: "var(--c-doc2)", x: 224, y: 46, n: 12 },
+    { c: "var(--c-doc3)", x: 172, y: 150, n: 12 },
+    { c: "var(--c-history)", x: 300, y: 112, n: 10 },
+  ];
+  const rnd = (i) => { const x = Math.sin(i * 78.233) * 43758.5453; return x - Math.floor(x); };
+  let h = "", k = 0;
+  CL.forEach((c) => {
+    for (let i = 0; i < c.n; i++, k++) {
+      const a = rnd(k + 1) * Math.PI * 2, r = 5 + rnd(k + 9) * 22;
+      h += `<circle cx="${(c.x + Math.cos(a) * r).toFixed(1)}" cy="${(c.y + Math.sin(a) * r * 0.75).toFixed(1)}" r="4.5" fill="${c.c}"/>`;
+    }
+  });
+  [[96, 66], [104, 84], [126, 60]].forEach(([x, y]) => (h += `<circle cx="${x}" cy="${y}" r="5" fill="var(--c-docs)"/><circle class="hitring" cx="${x}" cy="${y}" r="8"/>`));
+  h += `<circle cx="306" cy="104" r="5" fill="var(--c-history)"/>`;
+  document.getElementById("dots6").innerHTML = h;
+
+  // 400 squares stand for 20,000 chunks; 5 are lit
+  const lit = new Set([37, 141, 202, 288, 351]);
+  document.getElementById("sea").innerHTML = Array.from({ length: 400 }, (_, i) => `<i${lit.has(i) ? ' class="lit"' : ""}></i>`).join("");
+
+  const FIX = "Fixable with better retrieval", HARD = "Built into the design";
+  Deck.init({
+    groupColors: { [FIX]: "var(--p-rag)", [HARD]: "var(--c-danger)", "Next": "var(--p-kag)" },
+    steps: [
+      {
+        title: "Two kinds of problems",
+        body: `<p>Five problems come from how the pipeline is built, and have known fixes. Three come from the design itself: <strong>the model only sees the few chunks that look most like the question</strong>.</p>`,
+        notes: `<ul><li>Pages 05 and 06 showed the basic pipeline. This page adds what production systems layer on top, each with the reason it exists.</li></ul>`,
+      },
+      {
+        group: FIX,
+        title: "1. Chunks that don't stand alone",
+        body: `<p>A fixed-size cut splits the carry-over rule in two. The second half says "by 31 March" without saying what for.</p>`,
+        notes: `<ul><li>Ask the room: which question would ever retrieve chunk 13?</li></ul>`,
+      },
+      {
+        group: FIX,
+        title: "Fix: cut by structure, add context",
+        body: `<p>One section per chunk, a short <strong>context line</strong> saying where it comes from, and <strong>labels</strong> for filters and citations.</p>`,
+        notes: `<ul>
+          <li>Chunking strategies: fixed size with overlap (simple), by structure (policies, manuals), by meaning (transcripts, chats).</li>
+          <li>Size: a section or a few paragraphs is a common start. Parent and child: search small chunks, send their whole section.</li>
+          <li>Contextual Retrieval (Anthropic, Sept 2024): an LLM writes 50 to 100 tokens of context per chunk; failed top-20 retrievals fell 35%, 49% with contextual keyword search, 67% with reranking.</li></ul>`,
+      },
+      {
+        group: FIX,
+        title: "2. Exact names and codes",
+        body: `<p>"Who signs form HR-17?" Vector search ranks general chunks about forms first. The chunk that names <strong>HR-17</strong> comes 9th.</p>`,
+        notes: `<ul><li>Same for product codes, error numbers, people's names and acronyms.</li></ul>`,
+      },
+      {
+        group: FIX,
+        title: "Fix: hybrid search",
+        body: `<p>Run <strong>keyword search</strong> next to vector search and merge the two rankings. The exact match comes first.</p>`,
+        notes: `<ul><li>Keyword search is usually BM25. A common way to merge is reciprocal rank fusion: each chunk scores by its rank in each list.</li>
+          <li>On page 05 this means the database also keeps a keyword index next to the vectors.</li></ul>`,
+      },
+      {
+        group: FIX,
+        title: "3. Similar isn't relevant",
+        body: `<p>The replaced 2023 policy outranks the current one by a hair, and a travel-budget rule sneaks in on shared words.</p>`,
+        notes: `<ul><li>Same near-miss as page 06's third result.</li></ul>`,
+      },
+      {
+        group: FIX,
+        title: "Fix: filter, then rerank",
+        body: `<p><strong>Filter</strong> by labels (current version only, only what this user may see), then let a <strong>reranker</strong> re-order what's left by real relevance.</p>`,
+        notes: `<ul><li>Rerankers read the question and the chunk together, so they're more accurate and slower than vector search. Fetch 20 to 50, rerank, keep the best few.</li></ul>`,
+      },
+      {
+        group: FIX,
+        title: "4. A stale index",
+        body: `<p>The policy now says 7 days; the index still says 5. The answer is retrieved correctly, cited correctly, and <strong>wrong</strong>.</p>`,
+        notes: `<ul><li>Nothing in the answer looks broken, which is what makes this one dangerous.</li></ul>`,
+      },
+      {
+        group: FIX,
+        title: "Fix: keep the index in sync",
+        body: `<p>Detect changed files, <strong>delete their old chunks</strong>, run only those files through the pipeline again, and leave the rest alone.</p>`,
+        notes: `<ul><li>Also handle deleted files, permission changes and embedding-model upgrades (re-embed everything, then switch).</li></ul>`,
+      },
+      {
+        group: FIX,
+        title: "5. No way to tell it works",
+        body: `<p>"Tell your line manager" sounds right. The chunk that says "report to IT security within one hour" was never retrieved.</p>`,
+        notes: `<ul><li>Fluent answers hide retrieval misses. This is the most skipped check in RAG projects.</li></ul>`,
+      },
+      {
+        group: FIX,
+        title: "Fix: test retrieval on its own",
+        body: `<p>For real questions, note the chunk each should find and check it lands in the <strong>top 3</strong>. Here 4 of 5 do: fix the miss, re-test after every change.</p>`,
+        notes: `<ul><li>Recall at k. Build the test set from real user questions; 30 to 100 is a useful start.</li></ul>`,
+      },
+      {
+        group: HARD,
+        title: "6. Connected facts",
+        body: `<p>"Who approves my carry-over request?" The leave policy says <em>the line manager</em>. That chunk is close to the question and gets retrieved.</p>`,
+        notes: `<ul><li>From here on, better retrieval doesn't fix the problem. Ask the room what else the answer needs before clicking on.</li></ul>`,
+      },
+      {
+        group: HARD,
+        title: "The missing link",
+        body: `<p>Who <em>is</em> the line manager is in the org chart, which looks nothing like the question. It is never retrieved, so the model <strong>can't name Sara</strong>.</p>`,
+        notes: `<ul>
+          <li>A multi-hop question: fact 2 is only relevant once fact 1 is known.</li>
+          <li>Iterative retrieval (search, read, search again) helps, at the cost of more calls and latency. The KAG paper compares against such methods (IRCoT, HippoRAG).</li></ul>`,
+      },
+      {
+        group: HARD,
+        title: "7. The whole collection",
+        body: `<p>"What are the main complaints in three years of feedback?" The answer is spread across 20,000 chunks. Retrieval brings back <strong>five</strong>.</p>`,
+        notes: `<ul><li>GraphRAG (Edge et al., 2024) was built for exactly these "global sensemaking" questions.</li></ul>`,
+      },
+      {
+        group: HARD,
+        title: "8. Logic, numbers and rules",
+        body: `<p>"Which teams average more than 10 unused days?" Every record looks equally similar, and similarity can't apply <strong>"more than 10"</strong>.</p>`,
+        notes: `<ul><li>Quote from the KAG abstract: vector similarity is "insensitive to knowledge logic, such as numerical values, temporal relations, expert rules".</li></ul>`,
+      },
+      {
+        group: "Next",
+        title: "Store the links, don't guess them",
+        body: `<p>A <strong>knowledge graph</strong> stores facts and the connections between them, so a question can follow the path: you, Sales, Sara, carry-over.</p>
+               <p>Next: KAG and GraphRAG.</p>`,
+        notes: `<ul><li>Bridge to topic 08. Two different answers to two different RAG limits: KAG for connected facts and logic, GraphRAG for whole-collection questions.</li></ul>`,
+      },
+    ],
+  });
+})();
+</script>
+</body>
+</html>

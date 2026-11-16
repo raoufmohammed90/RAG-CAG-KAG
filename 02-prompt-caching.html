@@ -1,0 +1,1762 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prompt Caching</title>
+<link rel="stylesheet" href="assets/deck.css?v=8">
+<style>
+  /* =================== scene: client, network, server =================== */
+  .scene {
+    position: absolute;
+    inset: 0;
+    padding: 18px 22px 14px;
+    display: grid;
+    grid-template-columns: minmax(0, .8fr) minmax(110px, .34fr) minmax(0, 1.6fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    row-gap: 12px;
+  }
+
+  .box {
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--card);
+    border: 1.5px solid var(--frame);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .box-head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 9px 14px 8px;
+    border-bottom: 1.5px solid var(--rule);
+    font-family: var(--font-ui);
+  }
+  .box-head b { font-size: 1.05em; }
+  .box-head span { color: var(--ink-2); font-size: .8em; }
+  .box.client { --tint: var(--c-history); }
+  .box.server { --tint: var(--l3); }
+  .box.client, .box.server {
+    background: color-mix(in srgb, var(--tint) 5%, var(--card));
+    border-color: color-mix(in srgb, var(--tint) 50%, var(--frame));
+  }
+  .box.client .box-head, .box.server .box-head {
+    background: color-mix(in srgb, var(--tint) 13%, transparent);
+    border-bottom-color: color-mix(in srgb, var(--tint) 30%, var(--rule));
+  }
+
+  /* ---------- client: the chat app ---------- */
+  .sys-chip {
+    margin: 10px 10px 0;
+    padding: 5px 9px;
+    border: 1.5px dashed var(--c-system);
+    border-radius: 6px;
+    font-family: var(--font-ui);
+    font-size: .76em;
+    color: var(--ink-2);
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .sys-chip b { color: var(--ink); font-weight: 600; white-space: nowrap; }
+  .sys-chip .sq { width: 10px; height: 10px; border-radius: 2px; background: var(--c-system); flex: none; }
+  .sys-chip.pulse { animation: pulse 1.2s var(--ease) 2; }
+  @keyframes pulse { 50% { background: color-mix(in srgb, var(--c-system) 20%, transparent); } }
+
+  .conv-label {
+    margin: 9px 10px 0;
+    font-family: var(--font-ui);
+    font-size: .74em;
+    color: var(--ink-2);
+    display: flex;
+    gap: 7px;
+    align-items: center;
+  }
+  .conv-label::before { content: ""; width: 10px; height: 10px; border-radius: 2px; background: var(--c-history); flex: none; }
+
+  .chat {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 7px;
+    margin: 6px 7px 7px;
+    padding: 7px 5px;
+    border-radius: 8px;
+    border: 1.5px solid transparent;
+    transition: border-color .4s, background .4s;
+  }
+  .chat.stored { border-color: var(--c-history); background: color-mix(in srgb, var(--c-history) 7%, transparent); }
+  .chat.flash { animation: flash 1.1s var(--ease) 2; }
+  @keyframes flash { 50% { background: color-mix(in srgb, var(--c-history) 22%, transparent); } }
+
+  .msg {
+    max-width: 90%;
+    padding: 6px 10px;
+    border-radius: 10px;
+    font-size: .8em;
+    line-height: 1.4;
+    flex: none;
+  }
+  .msg.user { align-self: flex-end; background: var(--ink); color: var(--card); border-bottom-right-radius: 3px; }
+  .msg.bot { align-self: flex-start; background: var(--sheet); border: 1.5px solid var(--rule); border-bottom-left-radius: 3px; }
+  .msg.err { border-color: var(--c-danger); color: var(--c-danger); }
+  .msg.more {
+    align-self: stretch;
+    max-width: none;
+    text-align: center;
+    font-family: var(--font-ui);
+    font-size: .74em;
+    color: var(--ink-2);
+    padding: 4px 0;
+    border-top: 1.5px dashed var(--rule);
+    border-bottom: 1.5px dashed var(--rule);
+    border-radius: 0;
+  }
+  .msg.file { display: flex; align-items: center; gap: 9px; font-family: var(--font-ui); }
+  .msg.file small { display: block; opacity: .75; font-size: .85em; }
+  .file-ic {
+    width: 18px; height: 23px; flex: none;
+    border: 1.5px solid currentColor;
+    border-radius: 2px;
+    background: linear-gradient(currentColor, currentColor) 3px 6px / 9px 1.5px no-repeat,
+                linear-gradient(currentColor, currentColor) 3px 10px / 9px 1.5px no-repeat,
+                linear-gradient(currentColor, currentColor) 3px 14px / 6px 1.5px no-repeat;
+  }
+  .msg[hidden] { display: none; }
+  .msg.enter { animation: msgIn .4s var(--ease) both; }
+  @keyframes msgIn {
+    from { opacity: 0; transform: translateY(10px) scale(.97); }
+    to { opacity: 1; transform: none; }
+  }
+
+  .input {
+    margin: 0 10px 10px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    border: 1.5px solid var(--rule);
+    border-radius: 8px;
+    padding: 5px 5px 5px 10px;
+    min-height: 38px;
+    font-size: .8em;
+  }
+  .input .txt { flex: 1; min-width: 0; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .input .txt:empty:not(.typing)::before { content: "Ask the helpdesk"; color: var(--ink-3); }
+  .input .txt.typing::after {
+    content: "";
+    display: inline-block;
+    width: 2px; height: 1.05em;
+    background: var(--ink);
+    margin-left: 1px;
+    vertical-align: -2px;
+    animation: blink .8s steps(1) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+  .input .send {
+    font-family: var(--font-ui);
+    font-weight: 600;
+    font-size: .9em;
+    background: var(--ink);
+    color: var(--card);
+    border-radius: 5px;
+    padding: 4px 10px;
+    transition: transform .15s;
+  }
+  .input .send.press { transform: scale(.88); }
+
+  /* ---------- network between client and server ---------- */
+  .wire { position: relative; }
+  .lane {
+    position: absolute;
+    left: 4px; right: 4px;
+    height: 2px;
+    background: repeating-linear-gradient(90deg, var(--ink-3) 0 6px, transparent 6px 12px);
+  }
+  .lane.req { top: 30%; }
+  .lane.res { top: 70%; }
+  .lane.req::after, .lane.res::after { content: ""; position: absolute; top: -5px; border: 6px solid transparent; }
+  .lane.req::after { right: -6px; border-left: 8px solid var(--ink-3); border-right: 0; }
+  .lane.res::after { left: -6px; border-right: 8px solid var(--ink-3); border-left: 0; }
+  .lane span {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: var(--font-ui);
+    font-size: .74em;
+    color: var(--ink-3);
+    white-space: nowrap;
+  }
+  .lane.req span { bottom: 8px; }
+  .lane.res span { top: 8px; }
+  .wire-cap {
+    position: absolute;
+    left: 0; right: 0; top: 50%;
+    transform: translateY(-50%);
+    text-align: center;
+    font-family: var(--font-ui);
+    font-size: .74em;
+    color: var(--ink-3);
+  }
+
+  .packet {
+    position: absolute;
+    top: 30%;
+    width: 184px;
+    transform: translateY(-50%) scale(.9);
+    opacity: 0;
+    background: var(--card);
+    border: 1.5px solid var(--frame);
+    border-radius: 8px;
+    box-shadow: 4px 4px 0 var(--shadow);
+    padding: 7px 10px 6px;
+    font-family: var(--font-ui);
+    font-size: .74em;
+    z-index: 5;
+    left: -70px;
+    transition: left 1.15s cubic-bezier(.55, .05, .3, 1), opacity .35s, transform .35s var(--ease);
+  }
+  .packet.on { opacity: 1; transform: translateY(-50%) scale(1); }
+  .packet.at-server { left: calc(100% - 110px); }
+  .packet.instant { transition: none; }
+  .packet .ph { font-weight: 700; margin-bottom: 4px; display: flex; justify-content: space-between; }
+  .packet .ph span { color: var(--ink-2); font-weight: 400; }
+  .packet .row { display: grid; grid-template-columns: 10px 1fr auto; gap: 7px; align-items: center; padding: 1px 0; }
+  .packet .row i { width: 10px; height: 10px; border-radius: 2px; }
+  .packet .row b { font-weight: 400; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .packet .tot {
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1.5px solid var(--rule);
+    display: flex;
+    justify-content: space-between;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .err-packet {
+    position: absolute;
+    top: 70%;
+    left: calc(100% - 110px);
+    width: 170px;
+    transform: translateY(-50%);
+    opacity: 0;
+    background: var(--card);
+    border: 2px solid var(--c-danger);
+    color: var(--c-danger);
+    border-radius: 8px;
+    padding: 6px 9px;
+    font-family: var(--font-ui);
+    font-size: .74em;
+    font-weight: 600;
+    z-index: 5;
+    transition: left 1s cubic-bezier(.55, .05, .3, 1), opacity .3s;
+  }
+  .err-packet.on { opacity: 1; }
+  .err-packet.at-client { left: -60px; }
+  .err-packet.instant { transition: none; }
+
+  .stream { position: absolute; top: 70%; left: 4px; right: 4px; height: 0; opacity: 0; transition: opacity .3s; }
+  .stream.on { opacity: 1; }
+  .stream i {
+    position: absolute;
+    top: -6px;
+    width: 12px; height: 12px;
+    border-radius: 2px;
+    background: var(--c-response);
+    animation: flow 1s linear infinite;
+  }
+  .stream i:nth-child(2) { animation-delay: .25s; }
+  .stream i:nth-child(3) { animation-delay: .5s; }
+  .stream i:nth-child(4) { animation-delay: .75s; }
+  .solo {
+    position: absolute;
+    top: calc(70% - 6px);
+    left: calc(100% - 12px);
+    width: 12px; height: 12px;
+    border-radius: 2px;
+    background: var(--c-response);
+    opacity: 0;
+    z-index: 4;
+  }
+  .solo.go { animation: flow 1s linear 1 both; }
+  @keyframes flow {
+    from { left: calc(100% - 12px); opacity: 0; }
+    15% { opacity: 1; }
+    85% { opacity: 1; }
+    to { left: 0; opacity: 0; }
+  }
+
+  /* =================== server: the model =================== */
+  .srv {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) minmax(92px, auto);
+    grid-template-rows: auto minmax(0, 1fr) minmax(0, .8fr) auto auto;
+    grid-template-areas:
+      "wl   status status"
+      "win  net    out"
+      "win  tray   tray"
+      "win  cache  cache"
+      "wu   meta   meta";
+    column-gap: 14px;
+    row-gap: 8px;
+    padding: 10px 14px 10px;
+    font-family: var(--font-ui);
+  }
+  .area-label { font-weight: 600; font-size: .8em; line-height: 1.2; }
+  .area-label small { display: block; font-weight: 400; color: var(--ink-3); }
+
+  /* context window column */
+  .wl { grid-area: wl; align-self: end; }
+  /* the column keeps 14% of its height free below the window, so an overflow always has room */
+  .col {
+    grid-area: win;
+    position: relative;
+    width: clamp(92px, 7.4vw, 140px);
+  }
+  .cw-box {
+    position: absolute;
+    left: 0; right: 0; top: 0;
+    height: 86%;
+    border: 2px solid var(--frame);
+    border-radius: 6px;
+    background: var(--cell-empty);
+    transition: border-color .3s;
+  }
+  .col.over .cw-box { border-color: var(--c-danger); }
+  .wu { grid-area: wu; font-size: .76em; color: var(--ink-2); }
+  .wu b { color: var(--ink); font-size: 1.3em; font-variant-numeric: tabular-nums; }
+  .wu.over b { color: var(--c-danger); }
+
+  .seg {
+    position: absolute;
+    left: 3px; right: 3px;
+    min-height: 5px;
+    border-radius: 3px;
+    color: var(--on-color);
+    font-size: .66em;
+    font-weight: 600;
+    line-height: 1.2;
+    padding: 3px 5px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    transition:
+      height .6s var(--ease) var(--d, 0s),
+      opacity .4s var(--ease) var(--d, 0s),
+      transform .4s var(--ease) var(--d, 0s);
+  }
+  .seg.slow { transition: height var(--grow, 1.8s) linear; }
+  .seg.leave { opacity: 0; transform: translateX(26px); }
+  .seg.system { background: var(--c-system); }
+  .seg.history { background: var(--c-history); }
+  .seg.docs { background: var(--c-docs); }
+  .seg.question { background: var(--c-question); }
+  .seg.response { background: var(--c-response); }
+  .seg.room {
+    background: repeating-linear-gradient(135deg,
+      color-mix(in srgb, var(--c-response) 30%, transparent) 0 3px, transparent 3px 6px);
+    border: 1.5px dashed var(--c-response);
+    color: var(--c-response);
+  }
+  .seg { z-index: 1; }
+  .over-zone {
+    position: absolute;
+    left: 0; right: 0;
+    top: 86%;
+    height: 0;
+    border: 2px dashed var(--c-danger);
+    border-top: 0;
+    border-radius: 0 0 6px 6px;
+    background: repeating-linear-gradient(135deg,
+      color-mix(in srgb, var(--c-danger) 30%, transparent) 0 4px, transparent 4px 8px);
+    opacity: 0;
+    z-index: 0;
+    transition: opacity .4s, height .6s var(--ease);
+  }
+  .col.over .over-zone { opacity: 1; }
+
+  /* status line */
+  .status { grid-area: status; display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: .86em; align-self: end; }
+  .status i { width: 10px; height: 10px; border-radius: 50%; background: var(--ink-3); flex: none; }
+  .status.reading i { background: var(--ink); animation: beat .7s ease-in-out infinite; }
+  .status.writing i { background: var(--c-response); animation: beat .5s ease-in-out infinite; }
+  .status.error { color: var(--c-danger); }
+  .status.error i { background: var(--c-danger); }
+  .status.idle { color: var(--ink-2); font-weight: 400; }
+  .status.idle i { background: var(--accent); }
+  @keyframes beat { 50% { transform: scale(1.5); opacity: .6; } }
+
+  /* the neural network */
+  .net { grid-area: net; position: relative; min-height: 0; }
+  .net svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+  /* each layer has its own colour; the reading wave takes it, the writing pass is pink */
+  .net .n0, .net .e0, .net .lt0 { --lc: var(--l1); }
+  .net .n1, .net .e1, .net .lt1 { --lc: var(--l2); }
+  .net .n2, .net .e2, .net .lt2 { --lc: var(--l3); }
+  .net .n3, .net .e3, .net .lt3, .net .e4 { --lc: var(--l4); }
+  .net .n, .net .e { --wave: var(--lc); }
+  .net.writing .n, .net.writing .e { --wave: var(--c-response); }
+  .net .e { stroke: color-mix(in srgb, var(--lc) 22%, var(--rule)); stroke-width: 1; transition: stroke .2s, stroke-width .2s; }
+  .net .e.hot { stroke: var(--wave); stroke-width: 1.7; }
+  .net .n { fill: var(--card); stroke: color-mix(in srgb, var(--lc) 65%, var(--frame)); stroke-width: 1.8; transition: fill .2s, stroke .2s; }
+  .net .n.hot { fill: var(--wave); stroke: var(--wave); filter: drop-shadow(0 0 4px color-mix(in srgb, var(--wave) 70%, transparent)); }
+  .net .lt { font-family: var(--font-ui); font-size: 11px; font-weight: 700; fill: var(--lc); text-anchor: middle; }
+  .net .loop { fill: none; stroke: var(--rule); stroke-width: 1.5; stroke-dasharray: 4 4; transition: stroke .2s; }
+  .net .loop.hot { stroke: var(--c-response); animation: dash .5s linear infinite; }
+  .net .loop-lab { font-family: var(--font-ui); font-size: 10px; fill: var(--ink-3); text-anchor: middle; }
+  @keyframes dash { to { stroke-dashoffset: -16; } }
+  .net .ft { opacity: 0; }
+  .net.feeding .ft { animation: feed .8s linear infinite; }
+  @keyframes feed {
+    from { transform: translateX(-6px); opacity: 0; }
+    25% { opacity: 1; }
+    to { transform: translateX(46px); opacity: 0; }
+  }
+  .net.busy .n { animation: busy .24s ease-in-out infinite alternate; }
+  .net.busy .n:nth-of-type(3n) { animation-delay: .08s; }
+  .net.busy .n:nth-of-type(3n+1) { animation-delay: .16s; }
+  @keyframes busy { to { fill: var(--c-response); stroke: var(--c-response); } }
+  .net-note { position: absolute; left: 0; right: 0; bottom: -2px; text-align: center; font-size: .66em; color: var(--ink-3); }
+
+  /* output */
+  .out { grid-area: out; align-self: center; text-align: center; }
+  .outbox {
+    border: 2px solid var(--rule);
+    border-radius: 8px;
+    padding: 7px 8px 8px;
+    background: var(--card);
+    transition: border-color .3s;
+  }
+  .outbox.live { border-color: var(--c-response); }
+  .outbox small { display: block; font-size: .7em; color: var(--ink-2); }
+  .outbox b {
+    display: block;
+    min-height: 1.25em;
+    font-size: 1.45em;
+    line-height: 1.25;
+    color: var(--c-response);
+    white-space: pre;
+  }
+  .outbox b.pop { animation: pop .3s var(--ease); }
+  @keyframes pop { from { transform: scale(.6); opacity: 0; } to { transform: none; opacity: 1; } }
+
+  /* working values tray */
+  .tray { grid-area: tray; min-height: 0; display: flex; flex-direction: column; gap: 5px; }
+  .tray-head { display: flex; align-items: baseline; gap: 10px; font-size: .78em; white-space: nowrap; overflow: hidden; }
+  .tray-head b { font-weight: 600; }
+  .tray-head span { color: var(--ink-3); }
+  .tray-head .same-note { color: var(--ink); display: none; align-items: center; gap: 6px; font-weight: 600; animation: capIn .4s var(--ease) both; }
+  .tray.same .tray-head .sub { display: none; }
+  .tray-head .same-note::before { content: ""; width: 16px; height: 10px; border: 2px dashed var(--ink); border-radius: 3px; }
+  .tray.same .same-note { display: inline-flex; }
+  .tray-rows {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 50px minmax(0, 1fr);
+    grid-template-rows: repeat(4, minmax(0, 1fr));
+    row-gap: 4px;
+    column-gap: 8px;
+    border: 1.5px dashed var(--rule);
+    border-radius: 6px;
+    padding: 6px 8px;
+  }
+  .tlab { font-size: .66em; font-weight: 700; color: var(--lc); align-self: center; text-align: right; white-space: nowrap; }
+  .tlab::before {
+    content: "";
+    display: inline-block;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--lc);
+    margin-right: 5px;
+    vertical-align: 1px;
+  }
+  .tsegs { display: flex; gap: 2px; min-height: 0; border-radius: 3px; transition: box-shadow .2s; }
+  .tsegs.read { box-shadow: 0 0 0 2px var(--c-response); }
+  .tseg {
+    --k: var(--ink-3);
+    height: 100%;
+    flex: none;
+    border-radius: 2px;
+    background-color: var(--k);
+    background-image: repeating-linear-gradient(90deg, transparent 0 3px, color-mix(in srgb, var(--card) 45%, transparent) 3px 4px);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform .45s var(--ease) var(--d, 0s), width var(--wdur, .5s) linear, opacity .4s;
+  }
+  .tseg.on { transform: scaleX(1); }
+  .tseg.leave { opacity: 0; }
+  .tray.instant .tseg { transition: none; }
+  .tseg.system { --k: var(--c-system); }
+  .tseg.history { --k: var(--c-history); }
+  .tseg.question { --k: var(--c-question); }
+  .tseg.response { --k: var(--c-response); }
+  .same-wrap { grid-area: 1 / 2 / span 4 / 3; position: relative; pointer-events: none; }
+  .same-box {
+    position: absolute;
+    left: -4px; top: -4px; bottom: -4px;
+    border: 2px dashed var(--ink);
+    border-radius: 5px;
+    opacity: 0;
+    transition: opacity .5s;
+  }
+  .tray.same .same-box { opacity: 1; }
+  .tray-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: .72em; color: var(--ink-2); min-height: 1.2em; }
+  .tray-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .tray-legend i { width: 9px; height: 9px; border-radius: 2px; }
+  .tray-legend b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  /* counters */
+  .meta { grid-area: meta; display: flex; align-items: baseline; gap: 6px 20px; flex-wrap: wrap; font-size: .76em; color: var(--ink-2); }
+  .meta b { color: var(--ink); font-size: 1.45em; font-variant-numeric: tabular-nums; margin-left: 4px; }
+  .meta .memo { margin-left: auto; }
+  .meta .memo strong { color: var(--ink); }
+  .memo.flash strong { animation: memoFlash 1.2s var(--ease) 2; }
+  @keyframes memoFlash { 50% { color: var(--c-danger); } }
+
+  /* ---------- callout row under the scene ---------- */
+  .callout { grid-column: 1 / -1; position: relative; min-height: 60px; }
+  .callout > div { position: absolute; inset: 0; display: flex; align-items: center; gap: 18px; }
+  .callout .big {
+    font-family: var(--font-ui);
+    font-weight: 700;
+    font-size: clamp(19px, 1.6vw, 29px);
+    line-height: 1.15;
+  }
+  .callout .small { color: var(--ink-2); font-size: .9em; max-width: 60em; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  .chip {
+    font-family: var(--font-ui);
+    font-size: .9em;
+    padding: 2px 8px 3px;
+    border-radius: 4px;
+    border: 1.5px solid var(--c-question);
+    background: color-mix(in srgb, var(--c-question) 14%, var(--card));
+    white-space: pre;
+  }
+  .chip:nth-child(even) { background: var(--card); }
+  .callout .eq { font-family: var(--font-ui); color: var(--ink-2); }
+  .callout .eq b { color: var(--ink); }
+
+  /* =================== chart layer (last step) =================== */
+  .chart {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    gap: 12px;
+    font-family: var(--font-ui);
+  }
+  .chart-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px 24px; flex-wrap: wrap; }
+  .chart-head h2 { margin: 0; font-size: 1.25em; }
+  .chart-key { display: flex; gap: 18px; font-size: .82em; color: var(--ink-2); flex-wrap: wrap; }
+  .chart-key span { display: inline-flex; align-items: center; gap: 7px; }
+  .chart-key i { width: 14px; height: 14px; border-radius: 2px; }
+  .hatch {
+    background: repeating-linear-gradient(135deg, var(--ink-3) 0 3px, color-mix(in srgb, var(--ink-3) 35%, transparent) 3px 6px);
+  }
+  .plot { position: relative; min-height: 0; margin-left: 44px; border-left: 1.5px solid var(--frame); border-bottom: 1.5px solid var(--frame); }
+  .gridline { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--rule); }
+  .gridline span { position: absolute; right: calc(100% + 8px); top: -.65em; font-size: .72em; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .bars { position: absolute; inset: 0 6px 0 6px; display: flex; align-items: flex-end; gap: 5px; }
+  .bar {
+    flex: 1;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    transform: scaleY(0);
+    transform-origin: bottom;
+    transition: transform .55s var(--ease) calc(var(--i) * 45ms + .15s);
+  }
+  .chart.is-on .bar { transform: scaleY(1); }
+  .bar .new { background: var(--c-question); border-radius: 2px 2px 0 0; }
+  .xaxis { margin-left: 50px; margin-right: 6px; display: flex; gap: 5px; font-size: .72em; color: var(--ink-3); }
+  .xaxis span { flex: 1; text-align: center; font-variant-numeric: tabular-nums; }
+  .totals { display: flex; gap: 16px 40px; align-items: flex-end; flex-wrap: wrap; border-top: 1.5px solid var(--rule); padding-top: 12px; }
+  .totals .t b { display: block; font-size: clamp(26px, 2.4vw, 42px); line-height: 1; font-variant-numeric: tabular-nums; }
+  .totals .t span { font-size: .82em; color: var(--ink-2); }
+  .totals .t.alt b { color: var(--ink-2); }
+  .totals .foot { margin-left: auto; font-size: .76em; color: var(--ink-3); max-width: 22em; font-family: var(--font-text); }
+
+  /* =================== page 02: prompt caching =================== */
+
+  /* text served from cache: outlined in the cache colour */
+  .seg.hit { box-shadow: inset 0 0 0 2.5px var(--c-cache); }
+  .seg.date { background: var(--c-danger); }
+  .tseg.date { --k: var(--c-danger); }
+  .tseg.docs { --k: var(--c-docs); }
+  .tseg.cached { box-shadow: 0 0 0 2px var(--c-cache); }
+  .tseg.fromcache { animation: fromCache 1s var(--ease); }
+  @keyframes fromCache {
+    0% { transform: translateY(30px) scaleX(1); opacity: 0; }
+    60% { opacity: 1; }
+    100% { transform: none; }
+  }
+
+  /* the prompt cache: kept between requests */
+  .cache {
+    grid-area: cache;
+    border: 2px dashed color-mix(in srgb, var(--c-cache) 55%, var(--rule));
+    border-radius: 8px;
+    padding: 6px 10px 8px;
+    display: grid;
+    gap: 5px;
+    transition: border-color .3s, background .3s;
+  }
+  .cache.has { border-style: solid; border-color: var(--c-cache); background: color-mix(in srgb, var(--c-cache) 7%, transparent); }
+  .cache-head { display: flex; align-items: baseline; gap: 10px; font-size: .78em; white-space: nowrap; overflow: hidden; }
+  .cache-head b { color: var(--c-cache); font-weight: 700; }
+  .cache-head span { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; }
+  .cache-head .cache-flag, .cache-head .ttl, .cache-head b { flex: none; }
+  .cache-head .ttl { margin-left: auto; color: var(--ink); font-weight: 700; font-variant-numeric: tabular-nums; }
+  .cache-head .ttl.low { color: var(--c-danger); }
+  .cache-bar { display: flex; gap: 2px; height: 16px; }
+  .cseg {
+    --k: var(--ink-3);
+    height: 100%;
+    border-radius: 2px;
+    background-color: var(--k);
+    background-image: repeating-linear-gradient(90deg, transparent 0 3px, color-mix(in srgb, var(--card) 45%, transparent) 3px 4px);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform .6s var(--ease) var(--d, 0s), opacity .5s;
+  }
+  .cseg.on { transform: scaleX(1); }
+  .cseg.instant { transition: none; }
+  .cseg.leave { opacity: 0; }
+  .cseg.system { --k: var(--c-system); }
+  .cseg.docs { --k: var(--c-docs); }
+  .cseg.history { --k: var(--c-history); }
+  .cseg.question { --k: var(--c-question); }
+  .cseg.date { --k: var(--c-danger); }
+  .cache.hit { animation: cacheHit 1.1s var(--ease); }
+  @keyframes cacheHit { 40% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--c-cache) 35%, transparent); } }
+  .cache.miss { animation: cacheMiss .7s var(--ease); border-color: var(--c-danger); }
+  @keyframes cacheMiss {
+    20% { transform: translateX(-5px); }
+    40% { transform: translateX(4px); }
+    60% { transform: translateX(-3px); }
+    80% { transform: translateX(2px); }
+  }
+  .cache-flag {
+    font-size: .74em;
+    font-weight: 700;
+    border-radius: 999px;
+    padding: 0 8px 1px;
+    opacity: 0;
+    transition: opacity .3s;
+  }
+  .cache-flag.on { opacity: 1; }
+  .cache-flag.hit { color: var(--on-color); background: var(--c-cache); }
+  .cache-flag.miss { color: #fff; background: var(--c-danger); }
+  .cache-flag.write { color: var(--c-cache); border: 1.5px solid var(--c-cache); }
+
+  /* billing line */
+  .meta .bill b { color: var(--c-cache); }
+  .meta .bill small { color: var(--ink-3); margin-left: 4px; }
+
+  /* the cache marker inside a request packet */
+  .packet .mk {
+    margin: 3px 0;
+    border-top: 2px dashed var(--c-cache);
+    color: var(--c-cache);
+    font-size: .86em;
+    font-weight: 700;
+    padding-top: 1px;
+  }
+  .packet .row.d i { background: var(--c-danger); }
+
+  /* the app's stable beginning, in the client */
+  .sys-chip .policy { color: var(--c-docs); font-weight: 600; }
+
+  /* clock shown while time passes */
+  .clock {
+    position: absolute;
+    left: 36%; top: 42%;
+    transform: translate(-50%, -50%) scale(.9);
+    z-index: 6;
+    background: var(--card);
+    border: 2px solid var(--c-cache);
+    border-radius: 12px;
+    padding: 10px 18px;
+    text-align: center;
+    font-family: var(--font-ui);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .3s, transform .3s var(--ease);
+  }
+  .clock.on { opacity: 1; transform: translate(-50%, -50%); }
+  .clock b { display: block; font-size: 1.8em; font-variant-numeric: tabular-nums; }
+  .clock span { font-size: .8em; color: var(--ink-2); }
+
+  /* =================== explainer layers =================== */
+  .explain {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    gap: 18px;
+    font-family: var(--font-ui);
+  }
+  .explain h2 { margin: 0; font-size: 1.3em; }
+  .explain .lead { margin: 4px 0 0; font-family: var(--font-text); color: var(--ink-2); max-width: 54em; }
+  .explain .foot { font-size: .78em; color: var(--ink-3); font-family: var(--font-text); }
+
+  .reqs { display: grid; gap: 26px; align-content: center; }
+  .req { display: grid; grid-template-columns: 9.5em minmax(0, 1fr); gap: 16px; align-items: center; }
+  .req-name { font-weight: 700; }
+  .req-name small { display: block; font-weight: 400; color: var(--ink-2); font-size: .82em; }
+  .rbar { position: relative; display: flex; gap: 2px; height: 48px; }
+  .rbar > span {
+    height: 100%;
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    font-size: .78em;
+    font-weight: 600;
+    color: var(--on-color);
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .rbar .system { background: var(--c-system); }
+  .rbar .docs { background: var(--c-docs); }
+  .rbar .history { background: var(--c-history); }
+  .rbar .question { background: var(--c-question); }
+  .rbar .date { background: var(--c-danger); color: #fff; }
+  .rbar .tools { background: var(--c-tools); }
+  .rbar .cachedpart { box-shadow: inset 0 0 0 3px var(--c-cache); }
+  .rbar .missed { opacity: .45; }
+  .rbar > .marker {
+    overflow: visible;
+    position: absolute;
+    top: -12px; bottom: -12px;
+    width: 0;
+    border-left: 3px dashed var(--c-cache);
+    padding: 0;
+  }
+  .rbar .marker::after {
+    content: "cache marker";
+    position: absolute;
+    top: -18px; left: -40px;
+    width: 80px;
+    text-align: center;
+    font-size: .72em;
+    font-weight: 700;
+    color: var(--c-cache);
+  }
+  .verdict { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; margin-top: 8px; font-size: .9em; }
+  .verdict.ok { color: var(--c-cache); }
+  .verdict.bad { color: var(--c-danger); }
+  .brace { display: flex; gap: 2px; margin-top: 6px; font-size: .76em; color: var(--ink-2); }
+  .brace span { border-top: 2px solid currentColor; padding-top: 3px; text-align: center; }
+  .brace .c { color: var(--c-cache); }
+  .brace .n { color: var(--ink-2); }
+
+  .rule-list { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: .9em; }
+  .rule-list .tk { background: var(--card); border: 1.5px solid var(--rule); border-radius: 6px; padding: 3px 9px; }
+  .rule-list .arrow { color: var(--ink-3); }
+
+  /* price table */
+  .prices { width: 100%; border-collapse: collapse; font-size: .92em; align-self: center; }
+  .prices th, .prices td { text-align: left; padding: 12px 14px; border-bottom: 1.5px solid var(--rule); vertical-align: top; }
+  .prices th { font-size: .8em; color: var(--ink-2); font-weight: 600; }
+  .prices td:first-child { font-weight: 700; white-space: nowrap; }
+  .prices td b { color: var(--c-cache); }
+  .prices td small { display: block; color: var(--ink-3); font-family: var(--font-text); margin-top: 2px; }
+
+  /* the 20-question chart reuses page 01's chart styles */
+  .bar-c .cachepart { background: color-mix(in srgb, var(--c-cache) 75%, var(--card)); }
+</style>
+</head>
+<body data-prev="01-context-window.html" data-next="03-cag.html" data-topic="02">
+<div class="deck">
+  <header class="topbar">
+    <span class="sec">02</span>
+    <span class="name">Prompt caching</span>
+    <span class="spacer"></span>
+    <a href="index.html">Agenda</a>
+  </header>
+
+  <main class="layout tl">
+    <aside class="tl-col">
+      <div class="tl-head">
+        <h1>Reuse the repeated work</h1>
+        <p class="sub">Keep the working values of a beginning that never changes.</p>
+      </div>
+      <ol id="timeline" class="timeline"></ol>
+    </aside>
+
+    <section class="stage" aria-label="Animation">
+
+      <!-- =========== client, network, server =========== -->
+      <div class="scene" data-show="0-6,8,12">
+
+        <div class="box client">
+          <div class="box-head"><b>Chat app</b><span>the client</span></div>
+          <div class="sys-chip" id="sys-chip"><span class="sq"></span><b>System prompt</b><span class="policy" data-show="1+">+ HR policy</span></div>
+          <div class="conv-label" data-show="3+">History, stored by the app</div>
+          <div class="chat" id="chat">
+            <div class="msg user" data-from="1" data-id="q1">How many days of annual leave do I get?</div>
+            <div class="msg bot" data-from="3" data-early="2" data-first="Full" data-id="a1">Full-time staff get 25 days of paid leave a year, plus public holidays.</div>
+            <div class="msg user" data-from="4" data-id="q2">Can I carry unused days into next year?</div>
+            <div class="msg bot" data-from="6" data-early="5" data-first="Yes" data-id="a2">Yes, up to 5 days. Carried-over days must be used by the end of March.</div>
+            <div class="msg user" data-from="6" data-id="q3">Who approves it?</div>
+            <div class="msg bot" data-from="8" data-early="6" data-first="Your" data-id="a3">Your line manager approves carry-over in the HR portal.</div>
+            <div class="msg user" data-from="8" data-id="q4">Does that also apply to part-time staff?</div>
+            <div class="msg bot" data-from="9" data-early="8" data-first="Yes" data-id="a4">Yes, calculated in proportion to your contracted hours.</div>
+          </div>
+          <div class="input"><span class="txt" id="typed"></span><span class="send" id="send">Send</span></div>
+        </div>
+
+        <div class="wire">
+          <div class="lane req"><span>request</span></div>
+          <div class="wire-cap">internet</div>
+          <div class="lane res"><span>response</span></div>
+          <div class="packet" id="packet"></div>
+          <div class="stream" id="stream"><i></i><i></i><i></i><i></i></div>
+          <i class="solo" id="solo"></i>
+        </div>
+
+        <div class="box server">
+          <div class="box-head"><b>Model</b><span>on the provider's servers</span></div>
+          <div class="srv">
+            <div class="area-label wl">Context window<small>the text it sees</small></div>
+            <div class="col" id="cw"><div class="cw-box"></div><div class="over-zone" id="over-zone"></div></div>
+            <div class="wu" id="wu"><b id="used" class="num">0</b> of 8,000<br>tokens (demo)</div>
+
+            <div class="status idle" id="status"><i></i><span>Waiting</span></div>
+
+            <div class="net" id="net">
+              <svg id="net-svg" viewBox="0 0 330 205" preserveAspectRatio="xMidYMid meet" aria-label="Neural network with four layers"></svg>
+            </div>
+
+            <div class="out">
+              <div class="outbox" id="outbox"><small>Next token</small><b id="out-tok"></b></div>
+            </div>
+
+            <div class="tray" id="tray">
+              <div class="tray-head"><b>Working values</b><span class="sub">for this request</span></div>
+              <div class="tray-rows" id="tray-rows">
+                <div class="tlab" style="grid-area:1/1;--lc:var(--l1)">Layer 1</div><div class="tsegs" style="grid-area:1/2"></div>
+                <div class="tlab" style="grid-area:2/1;--lc:var(--l2)">Layer 2</div><div class="tsegs" style="grid-area:2/2"></div>
+                <div class="tlab" style="grid-area:3/1;--lc:var(--l3)">Layer 3</div><div class="tsegs" style="grid-area:3/2"></div>
+                <div class="tlab" style="grid-area:4/1;--lc:var(--l4)">Layer 4</div><div class="tsegs" style="grid-area:4/2"></div>
+              </div>
+              <div class="tray-legend" id="tray-legend"></div>
+            </div>
+
+            <div class="cache" id="cache">
+              <div class="cache-head"><b>Prompt cache</b><span id="cache-note">empty</span><span class="cache-flag" id="cache-flag"></span><span class="ttl" id="ttl"></span></div>
+              <div class="cache-bar" id="cache-bar"></div>
+            </div>
+
+            <div class="meta">
+              <span>Through the network <b id="c-net" class="num">0</b></span>
+              <span>From cache <b id="c-cache" class="num">0</b></span>
+              <span class="bill">Billed as <b id="c-bill" class="num">0</b> tokens<small id="c-base"></small></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="clock" id="clock"><b id="clock-t" class="num">0 min</b><span>without a request</span></div>
+
+        <div class="callout">
+          <div data-show="0"><span class="small">Page 01 ended with the model recomputing working values it had already computed in the previous request. <strong>What if the server kept them?</strong></span></div>
+          <div data-show="1"><span class="small">A <strong style="color:var(--c-cache)">cache marker</strong> tells the server: keep the working values for everything above this line.</span></div>
+          <div data-show="2"><span class="big mark">Read once, keep the values.</span><span class="small">Writing to the cache costs 25% extra on those tokens.</span></div>
+          <div data-show="3"><span class="big mark">The window is cleared. The cache is not.</span></div>
+          <div data-show="5"><span class="big num mark">Billed as 510 tokens instead of 3,210.</span><span class="small">3,000 tokens came from the cache. Only 210 went through the network.</span></div>
+          <div data-show="6"><span class="big mark">One changed token at the start, and nothing after it matches.</span></div>
+          <div data-show="8"><span class="big mark">Entries expire. Every hit restarts the timer.</span></div>
+          <div data-show="12"><span class="big mark">A big, stable beginning is cheap to reuse.</span><span class="small">So why not put all your knowledge there? That is CAG.</span></div>
+        </div>
+      </div>
+
+      <!-- =========== 7: stable first, changing last =========== -->
+      <div class="layer explain" data-show="7">
+        <div>
+          <h2>Stable first, changing last</h2>
+          <p class="lead">The cache matches from the very first token. Put what never changes at the start, and put anything that changes after the marker.</p>
+        </div>
+        <div class="reqs">
+          <div class="req" data-show="7" data-anim="left">
+            <div class="req-name">Matches<small>every request</small></div>
+            <div>
+              <div class="rbar">
+                <span class="system cachedpart" style="width:14%">System prompt</span>
+                <span class="docs cachedpart" style="width:56%">HR policy</span>
+                <span class="marker" style="left:70.5%"></span>
+                <span class="history" style="width:18%">Earlier turns</span>
+                <span class="question" style="width:8%">Question</span>
+              </div>
+              <div class="brace"><span class="c" style="width:70%">same every time: read from the cache</span><span class="n" style="width:26%">changes: processed</span></div>
+              <div class="verdict ok">Cache hit on every follow-up</div>
+            </div>
+          </div>
+          <div class="req" data-show="7" data-anim="left" style="--delay:.3s">
+            <div class="req-name">Never matches<small>date at the top</small></div>
+            <div>
+              <div class="rbar">
+                <span class="date" style="width:9%">Date</span>
+                <span class="system missed" style="width:13%">System prompt</span>
+                <span class="docs missed" style="width:50%">HR policy</span>
+                <span class="marker" style="left:72.5%"></span>
+                <span class="history missed" style="width:16%">Earlier turns</span>
+                <span class="question" style="width:8%">Question</span>
+              </div>
+              <div class="verdict bad">The date changes daily, so nothing after it ever matches</div>
+            </div>
+          </div>
+        </div>
+        <div class="rule-list">
+          <span>Order that caches well:</span>
+          <span class="tk tools">Tool definitions</span><span class="arrow">→</span>
+          <span class="tk system">System prompt</span><span class="arrow">→</span>
+          <span class="tk docs">Documents</span><span class="arrow">→</span>
+          <span class="tk history">Earlier turns</span><span class="arrow">→</span>
+          <span class="tk question">New question, dates, IDs</span>
+        </div>
+      </div>
+
+      <!-- =========== 9: move the marker as the chat grows =========== -->
+      <div class="layer explain" data-show="9">
+        <div>
+          <h2>Move the marker as the chat grows</h2>
+          <p class="lead">Put a marker at the end of the newest turn. The next request then reuses everything up to that point, so only the latest turn goes through the network.</p>
+        </div>
+        <div class="reqs">
+          <div class="req" data-show="9" data-anim="left">
+            <div class="req-name">Request 1<small>writes the cache</small></div>
+            <div class="rbar">
+              <span class="system" style="width:13%">System</span>
+              <span class="docs" style="width:58%">HR policy</span>
+              <span class="question" style="width:3%"></span>
+              <span class="marker" style="left:74.5%"></span>
+            </div>
+          </div>
+          <div class="req" data-show="9" data-anim="left" style="--delay:.25s">
+            <div class="req-name">Request 2<small>reads, then writes more</small></div>
+            <div class="rbar">
+              <span class="system cachedpart" style="width:13%">System</span>
+              <span class="docs cachedpart" style="width:58%">HR policy</span>
+              <span class="question cachedpart" style="width:3%"></span>
+              <span class="history" style="width:6%"></span>
+              <span class="question" style="width:3%"></span>
+              <span class="marker" style="left:84%"></span>
+            </div>
+          </div>
+          <div class="req" data-show="9" data-anim="left" style="--delay:.5s">
+            <div class="req-name">Request 3<small>reads more, writes more</small></div>
+            <div class="rbar">
+              <span class="system cachedpart" style="width:13%">System</span>
+              <span class="docs cachedpart" style="width:58%">HR policy</span>
+              <span class="question cachedpart" style="width:3%"></span>
+              <span class="history cachedpart" style="width:6%"></span>
+              <span class="question cachedpart" style="width:3%"></span>
+              <span class="history" style="width:6%"></span>
+              <span class="question" style="width:3%"></span>
+              <span class="marker" style="left:93.5%"></span>
+            </div>
+          </div>
+        </div>
+        <div class="rule-list"><span class="tk cache">Outlined: read from the cache</span><span>Claude takes up to 4 markers per request. OpenAI and Gemini can also match the longest repeated beginning automatically.</span></div>
+      </div>
+
+      <!-- =========== 10: what providers charge =========== -->
+      <div class="layer explain" data-show="10">
+        <div>
+          <h2>What providers charge</h2>
+          <p class="lead">All three bill cached input at a fraction of the normal price. They differ in whether you mark the beginning yourself, whether writing costs extra, and how long entries live.</p>
+        </div>
+        <table class="prices">
+          <thead><tr><th></th><th>How it's turned on</th><th>Reading from the cache</th><th>Writing to the cache</th><th>Kept for</th><th>Minimum size</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Anthropic<br>Claude</td>
+              <td>Cache markers you place (up to 4), or one automatic marker</td>
+              <td><b>about 0.1×</b> input price<small>0.05× on Claude Opus 5.5 and Sonnet 5.5</small></td>
+              <td>1.25× for 5 minutes<small>2× for the 1-hour option</small></td>
+              <td>5 minutes, reset by each hit<small>or 1 hour</small></td>
+              <td>512 to 4,096 tokens<small>depends on the model</small></td>
+            </tr>
+            <tr>
+              <td>OpenAI</td>
+              <td>Automatic for supported models<small>markers on GPT-5.6 and later</small></td>
+              <td><b>0.1×</b> on GPT-5.6 and later<small>"up to 95%" off, by model</small></td>
+              <td>1.25× on GPT-5.6 and later<small>no write charge on earlier models</small></td>
+              <td>30 minutes or more<small>12-hour option</small></td>
+              <td>1,024 tokens<small>GPT-5.6 and later</small></td>
+            </tr>
+            <tr>
+              <td>Google<br>Gemini</td>
+              <td>Implicit: automatic, no saving guaranteed<small>Explicit: you create a cache (Gemini 3 and 2.5)</small></td>
+              <td><b>0.1×</b> input price</td>
+              <td>No write fee<small>explicit caches pay hourly storage</small></td>
+              <td>1 hour by default<small>explicit caches: any TTL you set</small></td>
+              <td>2,048 to 4,096 tokens<small>depends on the model</small></td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="foot">Checked on 14 November 2026 against each provider's caching and pricing documentation. Prices change often; check before quoting them.</div>
+      </div>
+
+      <!-- =========== 11: over a 20-question chat =========== -->
+      <div class="layer chart" data-show="11">
+        <div class="chart-head">
+          <h2>The same 20-question chat, with the marker moved every turn</h2>
+          <div class="chart-key">
+            <span><i style="background:color-mix(in srgb, var(--c-cache) 75%, var(--card))"></i>Read from the cache (0.1×)</span>
+            <span><i style="background:var(--c-question)"></i>New: through the network, written to the cache (1.25×)</span>
+          </div>
+        </div>
+        <div class="plot" id="plot"><div class="bars" id="bars"></div></div>
+        <div class="xaxis" id="xaxis"></div>
+        <div class="totals">
+          <div class="t"><b id="tot-bill" class="num">0</b><span>billed input, in tokens</span></div>
+          <div class="t alt"><b id="tot-all" class="num">0</b><span>without caching (<span id="tot-pct">0</span>% less)</span></div>
+          <div class="t alt"><b id="tot-net" class="num">0</b><span>tokens through the network, instead of <span id="tot-all2">0</span></span></div>
+          <div class="foot">Assumes a 3,000-token stable beginning, about 200 tokens per question and answer, Claude's usual rates (writes 1.25×, reads 0.1×), and no gap longer than 5 minutes.</div>
+        </div>
+      </div>
+
+    </section>
+  </main>
+</div>
+
+<script src="assets/session.js?v=7"></script>
+<script src="assets/deck.js?v=6"></script>
+<script>
+(function () {
+  const LIMIT = 8000;
+  const TRAY = 4000; // the tray and the cache bar are drawn to this scale
+  const $ = (id) => document.getElementById(id);
+  const T = Deck.timeline();
+  const fmt = Deck.fmt;
+  const total = (list) => list.reduce((a, e) => a + e[1], 0);
+  const pct = (n) => (n / LIMIT) * 100;
+
+  const KIND = {
+    system:   { name: "System prompt",   color: "var(--c-system)" },
+    docs:     { name: "HR policy",       color: "var(--c-docs)" },
+    history:  { name: "Earlier turns",   color: "var(--c-history)" },
+    question: { name: "New question",    color: "var(--c-question)" },
+    response: { name: "Answer",          color: "var(--c-response)" },
+    date:     { name: "Today's date",    color: "var(--c-danger)" },
+    room:     { name: "Room for answer", color: "var(--c-response)" },
+  };
+
+  // every request; `mark` is how many rows sit above the cache marker
+  const REQ = {
+    r1: { rows: [["system", 500], ["docs", 2500], ["question", 10]], mark: 2 },
+    r2: { rows: [["system", 500], ["docs", 2500], ["history", 200], ["question", 10]], mark: 2 },
+    r3: { rows: [["date", 10], ["system", 500], ["docs", 2500], ["history", 410], ["question", 10]], mark: 3 },
+    r4: { rows: [["system", 500], ["docs", 2500], ["history", 620], ["question", 10]], mark: 2 },
+  };
+  const ANS = ["response", 190];
+  const PREFIX = [["system", 500], ["docs", 2500]];
+  const PREFIX_DATE = [["date", 10], ["system", 500], ["docs", 2500]];
+  // rows tagged: "c" served from the cache, "w" written to the cache
+  const tag = (req, cached, write) => req.rows.map(([k, n], i) => [k, n, i < cached ? "c" : i < write ? "w" : ""]);
+  const withFirst = (rows) => [...rows, ["response", 1, ""]];
+
+  /* end state of every step */
+  const S = [
+    /* 0 */ { status: ["idle", "Waiting"] },
+    /* 1 */ { status: ["idle", "Waiting"], packet: ["r1", "client"] },
+    /* 2 */ { win: withFirst(tag(REQ.r1, 0, 2)), tray: tag(REQ.r1, 0, 2), cache: PREFIX, ttl: "kept for 5:00", flag: "write", out: "Full",
+              n: [3010, 0, 3760, 3010], status: ["idle", "Read 3,010 tokens. Cache written."] },
+    /* 3 */ { cache: PREFIX, ttl: "4:41 left", n: [3010, 0, 3760, 3010], status: ["idle", "Answer sent. Window cleared, cache kept."] },
+    /* 4 */ { win: tag(REQ.r2, 0, 0), cache: PREFIX, ttl: "3:12 left", status: ["idle", "Loaded 3,210 tokens"] },
+    /* 5 */ { win: withFirst(tag(REQ.r2, 2, 2)), tray: tag(REQ.r2, 2, 2), cache: PREFIX, ttl: "kept for 5:00", flag: "hit", out: "Yes",
+              n: [210, 3000, 510, 3210], status: ["idle", "Cache hit. Only 210 new tokens read."] },
+    /* 6 */ { win: withFirst(tag(REQ.r3, 0, 3)), tray: tag(REQ.r3, 0, 3), cache: PREFIX_DATE, ttl: "kept for 5:00", flag: "miss", out: "Your",
+              n: [3430, 0, 4183, 3430], status: ["error", "No match. Read everything, wrote the cache again."] },
+    /* 7 */ null,
+    /* 8 */ { win: withFirst(tag(REQ.r4, 0, 2)), tray: tag(REQ.r4, 0, 2), cache: PREFIX, ttl: "kept for 5:00", flag: "write", out: "Yes",
+              n: [3630, 0, 4380, 3630], status: ["error", "The entry had expired. Read everything again."] },
+  ];
+  S[7] = S[6];
+  S[9] = S[10] = S[11] = S[12] = S[8];
+
+  /* =================== context window =================== */
+  const FRAME = 86;
+  const wp = (n) => (n / LIMIT) * FRAME;
+  const at = (n) => `calc(${wp(n)}% + 2px)`;
+  const segLabel = (k, n) => `${KIND[k].name} ${fmt(n)}`;
+  class Column {
+    constructor(el) { this.el = el; this.segs = []; }
+    make(k) { const s = document.createElement("div"); s.className = "seg " + k; this.el.appendChild(s); return s; }
+    place() {
+      let top = 0;
+      this.segs.forEach(([k, n, s, f]) => {
+        s.style.top = at(top);
+        s.style.height = wp(n) + "%";
+        s.textContent = pct(n) >= 6 ? segLabel(k, n) : "";
+        s.title = segLabel(k, n);
+        s.classList.toggle("hit", f === "c");
+        top += n;
+      });
+    }
+    clear() { this.el.querySelectorAll(".seg").forEach((s) => s.remove()); this.segs = []; }
+    growLast(n, secs) {
+      const last = this.segs[this.segs.length - 1];
+      if (!last) return;
+      last[1] = n;
+      last[2].classList.add("slow");
+      last[2].style.setProperty("--grow", secs + "s");
+      this.place();
+    }
+    set(list, mode = "instant", grow = 1.8) {
+      if (mode === "append") {
+        const before = total(this.segs);
+        list.slice(this.segs.length).forEach(([k, n, f]) => {
+          const s = this.make(k);
+          s.classList.add("slow");
+          s.style.setProperty("--grow", grow + "s");
+          s.style.top = at(before);
+          s.style.height = "0%";
+          this.segs.push([k, n, s, f]);
+        });
+      } else {
+        this.clear();
+        this.segs = list.map(([k, n, f]) => [k, n, this.make(k), f]);
+        if (mode === "fill") {
+          let top = 0;
+          this.segs.forEach(([, n, s], i) => {
+            s.style.top = at(top);
+            s.style.height = "0%";
+            s.style.setProperty("--d", i * 0.18 + "s");
+            top += n;
+          });
+        }
+      }
+      void this.el.offsetHeight;
+      this.place();
+    }
+    markHits(count) { this.segs.forEach((e, i) => { if (i < count) e[3] = "c"; }); this.place(); }
+    wipe() {
+      const old = this.segs;
+      old.forEach(([, , s], i) => { s.style.setProperty("--d", (old.length - 1 - i) * 0.08 + "s"); s.classList.add("leave"); });
+      this.segs = [];
+      T.at(700, () => old.forEach(([, , s]) => s.remove()));
+    }
+  }
+  const win = new Column($("cw"));
+  const usedEl = $("used"), wu = $("wu"), overZone = $("over-zone");
+  function winInfo(list, dur) {
+    const n = total(list);
+    Deck.tween(usedEl, n, { duration: dur });
+    const over = n > LIMIT;
+    win.el.classList.toggle("over", over);
+    wu.classList.toggle("over", over);
+    overZone.style.height = over ? wp(n - LIMIT) + 1 + "%" : "0";
+  }
+  function setWin(list, mode, grow) { win.set(list, mode, grow); winInfo(list, mode === "instant" ? 0 : 900); }
+  function wipeWin() { win.wipe(); winInfo([], 600); }
+
+  /* =================== the neural network =================== */
+  const net = $("net"), svg = $("net-svg");
+  const LX = [70, 138, 206, 274], NY = [30, 62, 94, 126, 158];
+  (function buildNet() {
+    let h = "";
+    NY.forEach((y) => (h += `<line class="e e0" x1="4" y1="94" x2="${LX[0]}" y2="${y}"/>`));
+    for (let l = 1; l < 4; l++)
+      NY.forEach((a) => NY.forEach((b) => (h += `<line class="e e${l}" x1="${LX[l - 1]}" y1="${a}" x2="${LX[l]}" y2="${b}"/>`)));
+    NY.forEach((y) => (h += `<line class="e e4" x1="${LX[3]}" y1="${y}" x2="326" y2="94"/>`));
+    h += `<path class="loop" id="loop" d="M 326 106 C 326 214, 4 214, 4 106"/>`;
+    h += `<text class="loop-lab" x="165" y="199">each new token goes back in</text>`;
+    for (let i = 0; i < 6; i++)
+      h += `<rect class="ft" x="0" y="89" width="10" height="10" rx="2" style="animation-delay:${i * 0.13}s"/>`;
+    LX.forEach((x, l) => {
+      h += `<text class="lt lt${l}" x="${x}" y="12">Layer ${l + 1}</text>`;
+      NY.forEach((y) => (h += `<circle class="n n${l}" cx="${x}" cy="${y}" r="9"/>`));
+    });
+    svg.innerHTML = h;
+  })();
+  const loop = svg.querySelector("#loop");
+  const feedRects = [...svg.querySelectorAll(".ft")];
+  function setFeed(kinds) {
+    feedRects.forEach((r, i) => (r.style.fill = KIND[kinds[i % kinds.length]].color));
+  }
+  function layerHot(l, on) { svg.querySelectorAll(`.n${l}, .e${l}`).forEach((el) => el.classList.toggle("hot", on)); }
+  function outHot(on) { svg.querySelectorAll(".e4").forEach((el) => el.classList.toggle("hot", on)); }
+  function coolNet() {
+    svg.querySelectorAll(".hot").forEach((el) => el.classList.remove("hot"));
+    net.classList.remove("writing", "busy", "feeding");
+    loop.classList.remove("hot");
+  }
+
+  /* =================== working values tray =================== */
+  const tray = $("tray"), rows = [...tray.querySelectorAll(".tsegs")], legend = $("tray-legend");
+  // list rows: [kind, tokens, tag]; tag "c" comes from the cache, "w" gets written to it
+  function trayRender(list, filled, { animateCached = false, saved = false } = {}) {
+    tray.classList.add("instant");
+    rows.forEach((row, r) => {
+      row.innerHTML = "";
+      list.forEach(([k, n, f]) => {
+        const s = document.createElement("div");
+        let cls = "tseg " + k + (f === "w" ? " w" : "");
+        if (f === "c") cls += " cached on" + (animateCached ? " fromcache" : "");
+        else if (r < filled) cls += " on";
+        if (f === "w" && saved && r < filled) cls += " cached";
+        s.className = cls;
+        s.style.width = (n ? Math.max(1.4, (n / TRAY) * 100) : 0) + "%";
+        row.appendChild(s);
+      });
+    });
+    void tray.offsetWidth;
+    tray.classList.remove("instant");
+    legend.innerHTML = list.map(([k, n]) =>
+      `<span><i style="background:${KIND[k].color}"></i>${KIND[k].name} <b data-k="${k}">${fmt(n)}</b></span>`).join("");
+  }
+  function trayFillRow(r) {
+    [...rows[r].children].filter((s) => !s.classList.contains("cached")).forEach((s, i) => {
+      s.style.setProperty("--d", i * 0.12 + "s");
+      s.classList.add("on");
+    });
+  }
+  function trayAnswer(n, ms) {
+    tray.style.setProperty("--wdur", ms + "ms");
+    rows.forEach((row) => { const s = row.querySelector(".response"); if (s) s.style.width = Math.max(1.4, (n / TRAY) * 100) + "%"; });
+    const b = legend.querySelector('[data-k="response"]');
+    if (b) Deck.tween(b, n, { duration: ms });
+  }
+  function trayClear() { rows.forEach((r) => (r.innerHTML = "")); legend.innerHTML = ""; }
+  function trayWipe() {
+    tray.querySelectorAll(".tseg").forEach((s) => s.classList.add("leave"));
+    T.at(600, trayClear);
+  }
+
+  /* =================== the prompt cache =================== */
+  const cacheBox = $("cache"), cacheBar = $("cache-bar"), cacheNote = $("cache-note"), ttlEl = $("ttl"), flagEl = $("cache-flag");
+  let cacheList = [];
+  function cacheSet(list, animate) {
+    cacheList = list;
+    cacheBar.innerHTML = list.map(([k, n], i) =>
+      `<div class="cseg ${k}${animate ? "" : " instant on"}" style="width:${Math.max(1.4, (n / TRAY) * 100)}%;--d:${i * 0.15}s"></div>`).join("");
+    if (animate) requestAnimationFrame(() => requestAnimationFrame(() => cacheBar.querySelectorAll(".cseg").forEach((s) => s.classList.add("on"))));
+    cacheBox.classList.toggle("has", list.length > 0);
+    cacheNote.textContent = list.length ? `first ${fmt(total(list))} tokens` : "empty";
+  }
+  function cacheExpire() {
+    cacheBar.querySelectorAll(".cseg").forEach((s) => s.classList.add("leave"));
+    cacheNote.textContent = "expired";
+    cacheBox.classList.remove("has");
+    cacheList = [];
+    T.at(600, () => (cacheBar.innerHTML = ""));
+  }
+  function cacheFlash(cls) { cacheBox.classList.remove("hit", "miss"); void cacheBox.offsetWidth; cacheBox.classList.add(cls); }
+  const FLAG = { hit: "Hit", miss: "No match", write: "Written" };
+  function setFlag(f) {
+    flagEl.className = "cache-flag" + (f ? " on " + f : "");
+    flagEl.textContent = f ? FLAG[f] : "";
+  }
+  function setTTL(text, low) { ttlEl.textContent = text || ""; ttlEl.classList.toggle("low", !!low); }
+
+  /* =================== counters, status, output =================== */
+  const cNet = $("c-net"), cCache = $("c-cache"), cBill = $("c-bill"), cBase = $("c-base");
+  const outTok = $("out-tok"), outbox = $("outbox"), statusEl = $("status");
+  function counters([net_, cache_, bill, base], dur = 0) {
+    Deck.tween(cNet, net_, { duration: dur });
+    Deck.tween(cCache, cache_, { duration: dur });
+    Deck.tween(cBill, bill, { duration: dur });
+    cBase.textContent = base ? ` instead of ${fmt(base)}` : "";
+  }
+  function setOut(text, live) {
+    outTok.textContent = text || "";
+    outbox.classList.toggle("live", !!live);
+    if (text) { outTok.classList.remove("pop"); void outTok.offsetWidth; outTok.classList.add("pop"); }
+  }
+  function setStatus([cls, text]) { statusEl.className = "status " + cls; statusEl.querySelector("span").textContent = text; }
+
+  /* =================== reading, with or without the cache ===================
+     cached: rows served from the cache; write: rows (from the top) written to it */
+  function runReading(key, { cached = 0, write = 0, firstToken, bubble, n, layerMs = 700, start = 0, statusEnd }) {
+    const list = tag(REQ[key], cached, write);
+    const fresh = REQ[key].rows.slice(cached);
+    const nNew = total(fresh), nCached = total(REQ[key].rows.slice(0, cached));
+    T.at(start, () => {
+      trayRender(list, 0, { animateCached: true });
+      coolNet();
+      setFeed(fresh.map((r) => r[0]));
+      net.classList.add("feeding");
+      setOut("", false);
+      if (cached) {
+        cacheFlash("hit");
+        setFlag("hit");
+        win.markHits(cached);
+        setStatus(["reading", `Cache hit: ${fmt(nCached)} tokens skipped. Reading ${fmt(nNew)} new.`]);
+      } else {
+        if (cacheList.length) { cacheFlash("miss"); setFlag("miss"); }
+        setStatus(["reading", `Reading all ${fmt(nNew)} tokens, layer by layer`]);
+      }
+      Deck.tween(cNet, nNew, { duration: layerMs * 4 });
+      Deck.tween(cCache, nCached, { duration: 500 });
+      Deck.tween(cBill, 0, { duration: 0 });
+      cBase.textContent = "";
+    });
+    for (let l = 0; l < 4; l++) {
+      T.at(start + 250 + l * layerMs, () => {
+        if (l > 0) layerHot(l - 1, false);
+        layerHot(l, true);
+        trayFillRow(l);
+      });
+    }
+    const tEnd = start + 250 + 4 * layerMs;
+    T.at(tEnd, () => {
+      net.classList.remove("feeding");
+      layerHot(3, false);
+      outHot(true);
+      setOut(firstToken, true);
+      if (write) {
+        const entry = REQ[key].rows.slice(0, write);
+        cacheSet(entry, true);
+        cacheFlash("hit");
+        setFlag("write");
+        setTTL("kept for 5:00");
+        tray.querySelectorAll(".tseg.w").forEach((s) => s.classList.add("cached"));
+      } else if (cached) {
+        setTTL("kept for 5:00");
+      }
+      Deck.tween(cBill, n[2], { duration: 700 });
+      cBase.textContent = ` instead of ${fmt(n[3])}`;
+    });
+    T.at(tEnd + 600, () => {
+      outHot(false);
+      const lst = withFirst(list);
+      win.set(lst, "append", 0.4);
+      winInfo(lst, 300);
+      solo.classList.remove("go"); void solo.offsetWidth; solo.classList.add("go");
+    });
+    T.at(tEnd + 1550, () => { if (bubble) revealFirst(bubble); });
+    T.at(tEnd + 1800, () => setStatus(statusEnd));
+    return tEnd + 1800;
+  }
+
+  /* =================== writing the answer =================== */
+  function writePass(t, tokenText, perLayer = 90) {
+    T.at(t, () => { net.classList.add("writing"); loop.classList.add("hot"); });
+    for (let l = 0; l < 4; l++) {
+      T.at(t + 150 + l * perLayer, () => {
+        if (l > 0) { layerHot(l - 1, false); rows[l - 1].classList.remove("read"); }
+        layerHot(l, true);
+        rows[l].classList.add("read");
+      });
+    }
+    T.at(t + 150 + 4 * perLayer, () => {
+      layerHot(3, false);
+      rows[3].classList.remove("read");
+      loop.classList.remove("hot");
+      outHot(true);
+      setOut(tokenText, true);
+    });
+    T.at(t + 260 + 4 * perLayer, () => outHot(false));
+  }
+  function runWriting(list, { slow, rest, fastMs, bubble, start = 0 }) {
+    T.at(start, () => {
+      trayRender([...list, ["response", 0, ""]], 4, { saved: true });
+      setStatus(["writing", "Writing the answer, one token at a time"]);
+      win.growLast(190, (slow.length * 560 + fastMs + 300) / 1000);
+      winInfo([...list, ANS], slow.length * 560 + fastMs);
+      stream.classList.add("on");
+    });
+    T.at(start + 150, () => reveal(bubble, slow.length * 560 + fastMs + 200));
+    let t = start + 100;
+    slow.forEach((w, i) => {
+      writePass(t, w);
+      T.at(t + 520, () => trayAnswer(i + 2, 380));
+      t += 560;
+    });
+    T.at(t, () => {
+      net.classList.add("writing", "busy");
+      loop.classList.add("hot");
+      trayAnswer(190, fastMs);
+      rest.forEach((w, i) => T.at((fastMs / rest.length) * i, () => setOut(w, true)));
+    });
+    T.at(t + fastMs, () => {
+      coolNet();
+      stream.classList.remove("on");
+      setOut("", false);
+      setStatus(["idle", "Answer finished: 190 tokens"]);
+    });
+    return t + fastMs;
+  }
+  // finish an answer quickly (used before the next demo starts)
+  function finishAnswer(bubbleEl, ms = 900) {
+    reveal(bubbleEl, ms);
+    win.growLast(190, ms / 1000);
+    stream.classList.add("on");
+    T.at(ms, () => stream.classList.remove("on"));
+  }
+  function forget(ttlText) {
+    wipeWin();
+    trayWipe();
+    coolNet();
+    setOut("", false);
+    setFlag(null);
+    if (ttlText) setTTL(ttlText);
+  }
+
+  /* =================== packets =================== */
+  const packet = $("packet"), stream = $("stream"), solo = $("solo");
+  const ROW = { system: "System prompt", docs: "HR policy", history: "Earlier turns", question: "New question", date: "Today's date" };
+  function packetHTML(key) {
+    const r = REQ[key];
+    let h = `<div class="ph">Request<span>to the model</span></div>`;
+    r.rows.forEach(([k, n], i) => {
+      h += `<div class="row${k === "date" ? " d" : ""}"><i style="background:${KIND[k].color}"></i>${ROW[k]}<b>${fmt(n)}</b></div>`;
+      if (i === r.mark - 1) h += `<div class="mk">cache marker</div>`;
+    });
+    return h + `<div class="tot"><span>Total</span><span>${fmt(total(r.rows))} tokens</span></div>`;
+  }
+  function setPacket(spec, instant) {
+    packet.classList.toggle("instant", !!instant);
+    if (!spec) packet.classList.remove("on");
+    else {
+      packet.innerHTML = packetHTML(spec[0]);
+      packet.classList.add("on");
+      packet.classList.toggle("at-server", spec[1] === "server");
+    }
+    if (instant) { void packet.offsetWidth; packet.classList.remove("instant"); }
+  }
+  function sendRequest(key, startAt, then, { fromClient = false } = {}) {
+    if (!fromClient) {
+      T.at(startAt, () => { setPacket([key, "client"], true); packet.classList.remove("on"); });
+      T.at(startAt + 30, () => packet.classList.add("on"));
+    }
+    T.at(startAt + 750, () => { setPacket([key, "server"]); setStatus(["idle", "Receiving the request"]); });
+    T.at(startAt + 2000, () => { setPacket(null); then(); });
+  }
+
+  /* =================== chat =================== */
+  const chat = $("chat"), typed = $("typed"), send = $("send"), sysChip = $("sys-chip");
+  const msgs = [...chat.querySelectorAll(".msg")];
+  msgs.forEach((m) => { if (!m.children.length) m._full = m.textContent; });
+  const bubble = (id) => chat.querySelector(`[data-id="${id}"]`);
+  const textOf = (id) => bubble(id)._full;
+  function showChat(step) {
+    msgs.forEach((m) => {
+      const from = Number(m.dataset.from);
+      const early = m.dataset.early ? Number(m.dataset.early) : from;
+      m.hidden = step < early;
+      m.classList.remove("enter");
+      if (m._full) m.textContent = step < from ? m.dataset.first : m._full;
+    });
+  }
+  function hideNew(step) {
+    msgs.forEach((m) => {
+      const early = m.dataset.early ? Number(m.dataset.early) : null;
+      if (Number(m.dataset.from) === step) {
+        if (early !== null && early < step) m.textContent = m.dataset.first;
+        else m.hidden = true;
+      }
+      if (early === step) m.hidden = true;
+    });
+  }
+  function revealFirst(m) {
+    m.hidden = false;
+    m.textContent = m.dataset.first;
+    m.classList.remove("enter"); void m.offsetWidth; m.classList.add("enter");
+  }
+  function reveal(m, typeMs) {
+    if (!m) return;
+    const already = !m.hidden && m._full && m._full.startsWith(m.textContent) ? m.textContent.length : 0;
+    m.hidden = false;
+    if (!already) { m.classList.remove("enter"); void m.offsetWidth; m.classList.add("enter"); }
+    if (typeMs && m._full) {
+      const full = m._full;
+      if (!already) m.textContent = "";
+      const per = typeMs / Math.max(1, full.length - already);
+      for (let i = already + 1; i <= full.length; i++) T.at((i - already) * per, () => { m.textContent = full.slice(0, i); });
+    }
+  }
+  function typeInput(text, startAt, per = 36) {
+    T.at(startAt, () => { typed.textContent = ""; typed.classList.add("typing"); });
+    for (let i = 1; i <= text.length; i++) T.at(startAt + i * per, () => { typed.textContent = text.slice(0, i); });
+    const end = startAt + text.length * per + 300;
+    T.at(end, () => { typed.classList.remove("typing"); typed.textContent = ""; send.classList.add("press"); });
+    T.at(end + 160, () => send.classList.remove("press"));
+    return end;
+  }
+
+  /* =================== end state of a step =================== */
+  const clock = $("clock"), clockT = $("clock-t");
+  function settle(step) {
+    const s = S[step] || S[0];
+    showChat(step);
+    typed.textContent = "";
+    typed.classList.remove("typing");
+    setWin(s.win || [], "instant");
+    coolNet();
+    rows.forEach((r) => r.classList.remove("read"));
+    if (s.tray) trayRender(s.tray, 4, { saved: true }); else trayClear();
+    cacheSet(s.cache || [], false);
+    cacheBox.classList.remove("hit", "miss");
+    setFlag(s.flag || null);
+    setTTL(s.ttl || "");
+    setOut(s.out || "", !!s.out);
+    counters(s.n || [0, 0, 0, 0]);
+    setStatus(s.status);
+    setPacket(s.packet || null, true);
+    stream.classList.remove("on");
+    sysChip.classList.remove("pulse");
+    chat.classList.toggle("stored", step >= 3);
+    chat.classList.remove("flash");
+    clock.classList.remove("on");
+    cacheBox.style.boxShadow = step === 12 ? "0 0 0 6px color-mix(in srgb, var(--c-cache) 30%, transparent)" : "";
+    if (step === 11) runChart(false);
+  }
+
+  /* =================== forward animations =================== */
+  const PLAY = {
+    1() {
+      hideNew(1);
+      sysChip.classList.add("pulse");
+      const end = typeInput(textOf("q1"), 300);
+      T.at(end, () => reveal(bubble("q1")));
+      T.at(end + 300, () => { setPacket(["r1", "client"], true); packet.classList.remove("on"); });
+      T.at(end + 340, () => packet.classList.add("on"));
+    },
+    2() {
+      hideNew(2);
+      sendRequest("r1", 0, () => {
+        setWin(tag(REQ.r1, 0, 0), "fill");
+        runReading("r1", { write: 2, firstToken: "Full", bubble: bubble("a1"), n: S[2].n, start: 400, statusEnd: S[2].status });
+      }, { fromClient: true });
+    },
+    3() {
+      hideNew(3);
+      const end = runWriting(tag(REQ.r1, 0, 2), {
+        slow: ["-time", "staff", "get"], rest: ["25", "days", "of", "paid", "leave", "a", "year", "."],
+        fastMs: 1300, bubble: bubble("a1"),
+      });
+      T.at(end + 500, () => { forget("4:41 left"); setStatus(S[3].status); chat.classList.add("stored", "flash"); });
+    },
+    4() {
+      hideNew(4);
+      counters([0, 0, 0, 0]);
+      const end = typeInput(textOf("q2"), 250);
+      T.at(end, () => reveal(bubble("q2")));
+      sendRequest("r2", end + 200, () => { setWin(tag(REQ.r2, 0, 0), "fill"); setStatus(S[4].status); setTTL("3:12 left"); });
+    },
+    5() {
+      hideNew(5);
+      runReading("r2", { cached: 2, firstToken: "Yes", bubble: bubble("a2"), n: S[5].n, statusEnd: S[5].status });
+    },
+    6() {
+      hideNew(6);
+      finishAnswer(bubble("a2"));
+      T.at(1100, () => forget("4:20 left"));
+      const end = typeInput(textOf("q3"), 1700);
+      T.at(end, () => reveal(bubble("q3")));
+      sendRequest("r3", end + 200, () => {
+        setWin(tag(REQ.r3, 0, 0), "fill");
+        runReading("r3", { write: 3, firstToken: "Your", bubble: bubble("a3"), n: S[6].n, start: 500, statusEnd: S[6].status });
+      });
+    },
+    8() {
+      hideNew(8);
+      finishAnswer(bubble("a3"));
+      T.at(1100, () => { forget(); counters([0, 0, 0, 0]); });
+      // seven minutes pass with no request
+      T.at(1500, () => { clock.classList.add("on"); setStatus(["idle", "Waiting"]); });
+      for (let m = 0; m <= 7; m++) {
+        T.at(1600 + m * 380, () => {
+          clockT.textContent = m + " min";
+          const left = Math.max(0, 5 * 60 - m * 60);
+          setTTL(left ? `${Math.floor(left / 60)}:00 left` : "0:00", left <= 60);
+          if (m === 5) cacheExpire();
+        });
+      }
+      T.at(1600 + 8 * 380, () => clock.classList.remove("on"));
+      const end = typeInput(textOf("q4"), 1600 + 8 * 380 + 200);
+      T.at(end, () => reveal(bubble("q4")));
+      sendRequest("r4", end + 200, () => {
+        setWin(tag(REQ.r4, 0, 0), "fill");
+        runReading("r4", { write: 2, firstToken: "Yes", bubble: bubble("a4"), n: S[8].n, start: 500, statusEnd: S[8].status });
+      });
+    },
+    11() { runChart(true); },
+    12() { cacheBox.style.boxShadow = "0 0 0 6px color-mix(in srgb, var(--c-cache) 30%, transparent)"; cacheFlash("hit"); },
+  };
+
+  /* =================== chart: 20 questions with the marker moved each turn =================== */
+  const N = 20, FIRST = 3010, TURN = 200, MAX = 7000;
+  const size = (n) => FIRST + (n - 1) * TURN;
+  (function buildChart() {
+    const plot = $("plot"), bars = $("bars"), xaxis = $("xaxis");
+    [2000, 4000, 6000].forEach((v) => {
+      const g = document.createElement("div");
+      g.className = "gridline";
+      g.style.bottom = (v / MAX) * 100 + "%";
+      g.innerHTML = `<span>${fmt(v)}</span>`;
+      plot.insertBefore(g, bars);
+    });
+    for (let n = 1; n <= N; n++) {
+      const cached = n === 1 ? 0 : size(n - 1);
+      const fresh = size(n) - cached;
+      const b = document.createElement("div");
+      b.className = "bar bar-c";
+      b.style.setProperty("--i", n);
+      b.title = `Request ${n}: ${fmt(cached)} from cache, ${fmt(fresh)} new`;
+      b.innerHTML = `<div class="new" style="height:${(fresh / MAX) * 100}%"></div>` +
+        `<div class="cachepart" style="height:${(cached / MAX) * 100}%"></div>`;
+      bars.appendChild(b);
+      const x = document.createElement("span");
+      x.textContent = n;
+      xaxis.appendChild(x);
+    }
+  })();
+  function runChart(animate) {
+    let all = 0, reads = 0, writes = 0;
+    for (let n = 1; n <= N; n++) {
+      const cached = n === 1 ? 0 : size(n - 1);
+      all += size(n);
+      reads += cached;
+      writes += size(n) - cached;
+    }
+    const bill = Math.round(reads * 0.1 + writes * 1.25);
+    const d = animate ? 1600 : 0;
+    Deck.tween($("tot-bill"), bill, { duration: d });
+    Deck.tween($("tot-all"), all, { duration: d });
+    Deck.tween($("tot-pct"), Math.round((1 - bill / all) * 100), { duration: d });
+    Deck.tween($("tot-net"), writes, { duration: d });
+    $("tot-all2").textContent = fmt(all);
+  }
+
+  /* =================== render =================== */
+  function render(step, prev) {
+    T.clear();
+    const forward = prev === step - 1 && !Deck.reduced();
+    if (!forward || !PLAY[step]) return settle(step);
+    settle(prev);
+    showChat(step);
+    PLAY[step]();
+  }
+
+  Deck.init({
+    render,
+    groupColors: {
+      "First request": "var(--c-question)",
+      "Follow-up": "var(--c-history)",
+      "What breaks it": "var(--c-danger)",
+      "Using it well": "var(--c-cache)",
+      "Next": "var(--p-cag)",
+    },
+    steps: [
+      {
+        title: "Where page 01 ended",
+        body: `<p>Every follow-up re-read the system prompt and the earlier turns, and computed exactly the same working values again.</p>
+               <p><strong>What if the server kept them?</strong></p>`,
+        notes: `<ul>
+          <li>Recap in one sentence: same tokens, same order, same values, recomputed and paid for every time.</li>
+          <li>This page answers the question we left open: keep them. That's prompt caching.</li></ul>`,
+      },
+      {
+        group: "First request",
+        title: "A bigger, stable beginning",
+        body: `<p>The app now puts the <span class="tk system">system prompt</span> and the whole <span class="tk docs">HR policy</span>, 3,000 tokens, at the start of every request.</p>
+               <p>Then it adds a <strong>cache marker</strong>: keep the working values for everything above this line.</p>`,
+        notes: `<ul>
+          <li>Point at the packet: the dashed teal line is the cache marker.</li>
+          <li>Caching only kicks in above a minimum size, between 512 and 4,096 tokens depending on the model. Our 3,000 tokens are a realistic size.</li></ul>`,
+      },
+      {
+        group: "First request",
+        title: "Read once, keep the values",
+        body: `<p>The network reads all 3,010 tokens as usual. The working values of the 3,000 above the marker are copied into the <strong>prompt cache</strong> on the server.</p>
+               <p>Writing costs a little extra: those 3,000 tokens are billed at 1.25×.</p>`,
+        notes: `<ul>
+          <li>The first request is slightly more expensive than without caching: 3,760 instead of 3,010.</li>
+          <li>The values are stored on the provider's servers, isolated to your organization or workspace.</li></ul>`,
+      },
+      {
+        group: "First request",
+        title: "Answer, then forget, except the cache",
+        body: `<p>The answer is written and sent as before. The window and the tray are cleared.</p>
+               <p>The <strong>cache entry stays</strong>, with a timer: 5 minutes by default.</p>`,
+        notes: `<ul><li>The model is still stateless. The cache is separate storage the server looks up before running the network.</li></ul>`,
+      },
+      {
+        group: "Follow-up",
+        title: "The follow-up arrives",
+        body: `<p>Same beginning, plus the first turn and the new question: 3,210 tokens.</p>`,
+        notes: `<ul><li>Nothing new for the app to do: it sends the whole conversation, exactly as on page 01.</li></ul>`,
+      },
+      {
+        group: "Follow-up",
+        title: "Cache hit: skip the repeat",
+        body: `<p>The first 3,000 tokens match the cache exactly, so their working values come <strong>straight from the cache</strong>. Only the 210 new tokens go through the network.</p>
+               <p>Billed as 510 tokens instead of 3,210, and the answer starts sooner.</p>`,
+        notes: `<ul>
+          <li>Point at the tray: the outlined part arrived from the cache, only the blue and green parts were computed.</li>
+          <li>Reading from the cache costs about a tenth of the normal price on Claude, less on the newest models.</li>
+          <li>Less to compute before the first token, so time to first token drops too.</li></ul>`,
+      },
+      {
+        group: "What breaks it",
+        title: "Change the start, lose the cache",
+        body: `<p>Someone adds today's date at the top of the system prompt. Every token after it now has different working values, so <strong>nothing matches</strong>.</p>
+               <p>Everything is read again and a new entry is written: 4,183 billed, more than without caching.</p>`,
+        notes: `<ul>
+          <li>The classic mistake: timestamps, user names or random IDs at the top of the prompt.</li>
+          <li>Each token's values depend on every token before it, so one early change invalidates everything after it.</li></ul>`,
+      },
+      {
+        group: "What breaks it",
+        title: "Stable first, changing last",
+        body: `<p>Put what never changes at the start: tools, system prompt, documents. Put what changes after the marker: history, the new question, dates and IDs.</p>`,
+        notes: `<ul><li>This one rule decides most of the savings. Order matters more than any setting.</li></ul>`,
+      },
+      {
+        group: "What breaks it",
+        title: "Entries expire",
+        body: `<p>No request for 7 minutes, and the 5-minute entry is gone. The next question pays to read and write everything again.</p>
+               <p>Every hit restarts the timer. A 1-hour lifetime is available, but costs 2× to write.</p>`,
+        notes: `<ul>
+          <li>Busy chats keep their cache warm on their own; quiet ones lose it.</li>
+          <li>Some providers keep entries longer by default; see the price list next.</li></ul>`,
+      },
+      {
+        group: "Using it well",
+        title: "Move the marker as the chat grows",
+        body: `<p>Put a marker at the end of the newest turn. Each request then reuses everything up to the previous one, and only the latest turn is processed.</p>`,
+        notes: `<ul><li>Claude allows up to 4 markers per request, or one automatic marker. OpenAI caches the longest repeated beginning automatically.</li></ul>`,
+      },
+      {
+        group: "Using it well",
+        title: "What providers charge",
+        body: `<p>All three bill cached input at about a tenth of the normal price. They differ in how it's switched on, whether writing costs extra, and how long entries live.</p>`,
+        notes: `<ul>
+          <li>Checked on 14 November 2026 against each provider's docs. Prices change often; check before quoting them.</li>
+          <li>Anthropic: writes 1.25× (5 min) or 2× (1 hour), reads about 0.1× (0.05× on Opus 5.5 and Sonnet 5.5).</li>
+          <li>OpenAI: automatic; on GPT-5.6 and later, reads 0.1× and writes 1.25×, kept at least 30 minutes. Earlier models have no write charge.</li>
+          <li>Gemini: implicit caching is automatic but not guaranteed; explicit caches charge hourly storage.</li></ul>`,
+      },
+      {
+        group: "Using it well",
+        title: "Over a 20-question chat",
+        body: `<p>The same chat as page 01, with a 3,000-token beginning and the marker moved every turn. About 82% less billed input, and the network only processes each new turn once.</p>`,
+        notes: `<ul>
+          <li>Teal: read from the cache at 0.1×. Green: new tokens, processed and written at 1.25×.</li>
+          <li>Assumes no gap longer than 5 minutes between questions.</li></ul>`,
+      },
+      {
+        group: "Next",
+        title: "From caching to CAG",
+        body: `<p>A big, stable beginning is cheap to reuse. So why not put <strong>all of your knowledge</strong> there, load it once, and reuse it for every question?</p>
+               <p>That is <strong>cache-augmented generation</strong>.</p>`,
+        notes: `<ul><li>Bridge to topic 03. The HR policy was our first small knowledge base; CAG takes that idea all the way.</li></ul>`,
+      },
+    ],
+  });
+})();
+</script>
+</body>
+</html>

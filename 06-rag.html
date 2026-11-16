@@ -1,0 +1,1205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Retrieval-Augmented Generation</title>
+<link rel="stylesheet" href="assets/deck.css?v=8">
+<link rel="stylesheet" href="assets/flow.css?v=2">
+<style>
+  /* =================== scene: client, network, server =================== */
+  .scene {
+    position: absolute;
+    inset: 0;
+    padding: 18px 22px 14px;
+    display: grid;
+    grid-template-columns: minmax(0, .8fr) minmax(110px, .34fr) minmax(0, 1.6fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    row-gap: 12px;
+  }
+
+  .box {
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--card);
+    border: 1.5px solid var(--frame);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .box-head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 9px 14px 8px;
+    border-bottom: 1.5px solid var(--rule);
+    font-family: var(--font-ui);
+  }
+  .box-head b { font-size: 1.05em; }
+  .box-head span { color: var(--ink-2); font-size: .8em; }
+  .box.client { --tint: var(--c-history); }
+  .box.server { --tint: var(--l3); }
+  .box.client, .box.server {
+    background: color-mix(in srgb, var(--tint) 5%, var(--card));
+    border-color: color-mix(in srgb, var(--tint) 50%, var(--frame));
+  }
+  .box.client .box-head, .box.server .box-head {
+    background: color-mix(in srgb, var(--tint) 13%, transparent);
+    border-bottom-color: color-mix(in srgb, var(--tint) 30%, var(--rule));
+  }
+
+  /* ---------- client: the chat app ---------- */
+  .sys-chip {
+    margin: 10px 10px 0;
+    padding: 5px 9px;
+    border: 1.5px dashed var(--c-system);
+    border-radius: 6px;
+    font-family: var(--font-ui);
+    font-size: .76em;
+    color: var(--ink-2);
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .sys-chip b { color: var(--ink); font-weight: 600; white-space: nowrap; }
+  .sys-chip .sq { width: 10px; height: 10px; border-radius: 2px; background: var(--c-system); flex: none; }
+  .sys-chip.pulse { animation: pulse 1.2s var(--ease) 2; }
+  @keyframes pulse { 50% { background: color-mix(in srgb, var(--c-system) 20%, transparent); } }
+
+  .conv-label {
+    margin: 9px 10px 0;
+    font-family: var(--font-ui);
+    font-size: .74em;
+    color: var(--ink-2);
+    display: flex;
+    gap: 7px;
+    align-items: center;
+  }
+  .conv-label::before { content: ""; width: 10px; height: 10px; border-radius: 2px; background: var(--c-history); flex: none; }
+
+  .chat {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 7px;
+    margin: 6px 7px 7px;
+    padding: 7px 5px;
+    border-radius: 8px;
+    border: 1.5px solid transparent;
+    transition: border-color .4s, background .4s;
+  }
+  .chat.stored { border-color: var(--c-history); background: color-mix(in srgb, var(--c-history) 7%, transparent); }
+  .chat.flash { animation: flash 1.1s var(--ease) 2; }
+  @keyframes flash { 50% { background: color-mix(in srgb, var(--c-history) 22%, transparent); } }
+
+  .msg {
+    max-width: 90%;
+    padding: 6px 10px;
+    border-radius: 10px;
+    font-size: .8em;
+    line-height: 1.4;
+    flex: none;
+  }
+  .msg.user { align-self: flex-end; background: var(--ink); color: var(--card); border-bottom-right-radius: 3px; }
+  .msg.bot { align-self: flex-start; background: var(--sheet); border: 1.5px solid var(--rule); border-bottom-left-radius: 3px; }
+  .msg.err { border-color: var(--c-danger); color: var(--c-danger); }
+  .msg.more {
+    align-self: stretch;
+    max-width: none;
+    text-align: center;
+    font-family: var(--font-ui);
+    font-size: .74em;
+    color: var(--ink-2);
+    padding: 4px 0;
+    border-top: 1.5px dashed var(--rule);
+    border-bottom: 1.5px dashed var(--rule);
+    border-radius: 0;
+  }
+  .msg.file { display: flex; align-items: center; gap: 9px; font-family: var(--font-ui); }
+  .msg.file small { display: block; opacity: .75; font-size: .85em; }
+  .file-ic {
+    width: 18px; height: 23px; flex: none;
+    border: 1.5px solid currentColor;
+    border-radius: 2px;
+    background: linear-gradient(currentColor, currentColor) 3px 6px / 9px 1.5px no-repeat,
+                linear-gradient(currentColor, currentColor) 3px 10px / 9px 1.5px no-repeat,
+                linear-gradient(currentColor, currentColor) 3px 14px / 6px 1.5px no-repeat;
+  }
+  .msg[hidden] { display: none; }
+  .msg.enter { animation: msgIn .4s var(--ease) both; }
+  @keyframes msgIn {
+    from { opacity: 0; transform: translateY(10px) scale(.97); }
+    to { opacity: 1; transform: none; }
+  }
+
+  .input {
+    margin: 0 10px 10px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    border: 1.5px solid var(--rule);
+    border-radius: 8px;
+    padding: 5px 5px 5px 10px;
+    min-height: 38px;
+    font-size: .8em;
+  }
+  .input .txt { flex: 1; min-width: 0; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .input .txt:empty:not(.typing)::before { content: "Ask the helpdesk"; color: var(--ink-3); }
+  .input .txt.typing::after {
+    content: "";
+    display: inline-block;
+    width: 2px; height: 1.05em;
+    background: var(--ink);
+    margin-left: 1px;
+    vertical-align: -2px;
+    animation: blink .8s steps(1) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+  .input .send {
+    font-family: var(--font-ui);
+    font-weight: 600;
+    font-size: .9em;
+    background: var(--ink);
+    color: var(--card);
+    border-radius: 5px;
+    padding: 4px 10px;
+    transition: transform .15s;
+  }
+  .input .send.press { transform: scale(.88); }
+
+  /* ---------- network between client and server ---------- */
+  .wire { position: relative; }
+  .lane {
+    position: absolute;
+    left: 4px; right: 4px;
+    height: 2px;
+    background: repeating-linear-gradient(90deg, var(--ink-3) 0 6px, transparent 6px 12px);
+  }
+  .lane.req { top: 30%; }
+  .lane.res { top: 70%; }
+  .lane.req::after, .lane.res::after { content: ""; position: absolute; top: -5px; border: 6px solid transparent; }
+  .lane.req::after { right: -6px; border-left: 8px solid var(--ink-3); border-right: 0; }
+  .lane.res::after { left: -6px; border-right: 8px solid var(--ink-3); border-left: 0; }
+  .lane span {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: var(--font-ui);
+    font-size: .74em;
+    color: var(--ink-3);
+    white-space: nowrap;
+  }
+  .lane.req span { bottom: 8px; }
+  .lane.res span { top: 8px; }
+  .wire-cap {
+    position: absolute;
+    left: 0; right: 0; top: 50%;
+    transform: translateY(-50%);
+    text-align: center;
+    font-family: var(--font-ui);
+    font-size: .74em;
+    color: var(--ink-3);
+  }
+
+  .packet {
+    position: absolute;
+    top: 30%;
+    width: 184px;
+    transform: translateY(-50%) scale(.9);
+    opacity: 0;
+    background: var(--card);
+    border: 1.5px solid var(--frame);
+    border-radius: 8px;
+    box-shadow: 4px 4px 0 var(--shadow);
+    padding: 7px 10px 6px;
+    font-family: var(--font-ui);
+    font-size: .74em;
+    z-index: 5;
+    left: -70px;
+    transition: left 1.15s cubic-bezier(.55, .05, .3, 1), opacity .35s, transform .35s var(--ease);
+  }
+  .packet.on { opacity: 1; transform: translateY(-50%) scale(1); }
+  .packet.at-server { left: calc(100% - 110px); }
+  .packet.instant { transition: none; }
+  .packet .ph { font-weight: 700; margin-bottom: 4px; display: flex; justify-content: space-between; }
+  .packet .ph span { color: var(--ink-2); font-weight: 400; }
+  .packet .row { display: grid; grid-template-columns: 10px 1fr auto; gap: 7px; align-items: center; padding: 1px 0; }
+  .packet .row i { width: 10px; height: 10px; border-radius: 2px; }
+  .packet .row b { font-weight: 400; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .packet .tot {
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1.5px solid var(--rule);
+    display: flex;
+    justify-content: space-between;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .err-packet {
+    position: absolute;
+    top: 70%;
+    left: calc(100% - 110px);
+    width: 170px;
+    transform: translateY(-50%);
+    opacity: 0;
+    background: var(--card);
+    border: 2px solid var(--c-danger);
+    color: var(--c-danger);
+    border-radius: 8px;
+    padding: 6px 9px;
+    font-family: var(--font-ui);
+    font-size: .74em;
+    font-weight: 600;
+    z-index: 5;
+    transition: left 1s cubic-bezier(.55, .05, .3, 1), opacity .3s;
+  }
+  .err-packet.on { opacity: 1; }
+  .err-packet.at-client { left: -60px; }
+  .err-packet.instant { transition: none; }
+
+  .stream { position: absolute; top: 70%; left: 4px; right: 4px; height: 0; opacity: 0; transition: opacity .3s; }
+  .stream.on { opacity: 1; }
+  .stream i {
+    position: absolute;
+    top: -6px;
+    width: 12px; height: 12px;
+    border-radius: 2px;
+    background: var(--c-response);
+    animation: flow 1s linear infinite;
+  }
+  .stream i:nth-child(2) { animation-delay: .25s; }
+  .stream i:nth-child(3) { animation-delay: .5s; }
+  .stream i:nth-child(4) { animation-delay: .75s; }
+  .solo {
+    position: absolute;
+    top: calc(70% - 6px);
+    left: calc(100% - 12px);
+    width: 12px; height: 12px;
+    border-radius: 2px;
+    background: var(--c-response);
+    opacity: 0;
+    z-index: 4;
+  }
+  .solo.go { animation: flow 1s linear 1 both; }
+  @keyframes flow {
+    from { left: calc(100% - 12px); opacity: 0; }
+    15% { opacity: 1; }
+    85% { opacity: 1; }
+    to { left: 0; opacity: 0; }
+  }
+
+  /* =================== server: the model =================== */
+  .srv {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) minmax(92px, auto);
+    grid-template-rows: auto minmax(0, 1fr) minmax(0, .8fr) auto auto;
+    grid-template-areas:
+      "wl   status status"
+      "win  net    out"
+      "win  tray   tray"
+      "win  cache  cache"
+      "wu   meta   meta";
+    column-gap: 14px;
+    row-gap: 8px;
+    padding: 10px 14px 10px;
+    font-family: var(--font-ui);
+  }
+  .area-label { font-weight: 600; font-size: .8em; line-height: 1.2; }
+  .area-label small { display: block; font-weight: 400; color: var(--ink-3); }
+
+  /* context window column */
+  .wl { grid-area: wl; align-self: end; }
+  /* the column keeps 14% of its height free below the window, so an overflow always has room */
+  .col {
+    grid-area: win;
+    position: relative;
+    width: clamp(92px, 7.4vw, 140px);
+  }
+  .cw-box {
+    position: absolute;
+    left: 0; right: 0; top: 0;
+    height: 86%;
+    border: 2px solid var(--frame);
+    border-radius: 6px;
+    background: var(--cell-empty);
+    transition: border-color .3s;
+  }
+  .col.over .cw-box { border-color: var(--c-danger); }
+  .wu { grid-area: wu; font-size: .76em; color: var(--ink-2); }
+  .wu b { color: var(--ink); font-size: 1.3em; font-variant-numeric: tabular-nums; }
+  .wu.over b { color: var(--c-danger); }
+
+  .seg {
+    position: absolute;
+    left: 3px; right: 3px;
+    min-height: 5px;
+    border-radius: 3px;
+    color: var(--on-color);
+    font-size: .66em;
+    font-weight: 600;
+    line-height: 1.2;
+    padding: 3px 5px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    transition:
+      height .6s var(--ease) var(--d, 0s),
+      opacity .4s var(--ease) var(--d, 0s),
+      transform .4s var(--ease) var(--d, 0s);
+  }
+  .seg.slow { transition: height var(--grow, 1.8s) linear; }
+  .seg.leave { opacity: 0; transform: translateX(26px); }
+  .seg.system { background: var(--c-system); }
+  .seg.history { background: var(--c-history); }
+  .seg.docs { background: var(--c-docs); }
+  .seg.question { background: var(--c-question); }
+  .seg.response { background: var(--c-response); }
+  .seg.room {
+    background: repeating-linear-gradient(135deg,
+      color-mix(in srgb, var(--c-response) 30%, transparent) 0 3px, transparent 3px 6px);
+    border: 1.5px dashed var(--c-response);
+    color: var(--c-response);
+  }
+  .seg { z-index: 1; }
+  .over-zone {
+    position: absolute;
+    left: 0; right: 0;
+    top: 86%;
+    height: 0;
+    border: 2px dashed var(--c-danger);
+    border-top: 0;
+    border-radius: 0 0 6px 6px;
+    background: repeating-linear-gradient(135deg,
+      color-mix(in srgb, var(--c-danger) 30%, transparent) 0 4px, transparent 4px 8px);
+    opacity: 0;
+    z-index: 0;
+    transition: opacity .4s, height .6s var(--ease);
+  }
+  .col.over .over-zone { opacity: 1; }
+
+  /* status line */
+  .status { grid-area: status; display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: .86em; align-self: end; }
+  .status i { width: 10px; height: 10px; border-radius: 50%; background: var(--ink-3); flex: none; }
+  .status.reading i { background: var(--ink); animation: beat .7s ease-in-out infinite; }
+  .status.writing i { background: var(--c-response); animation: beat .5s ease-in-out infinite; }
+  .status.error { color: var(--c-danger); }
+  .status.error i { background: var(--c-danger); }
+  .status.idle { color: var(--ink-2); font-weight: 400; }
+  .status.idle i { background: var(--accent); }
+  @keyframes beat { 50% { transform: scale(1.5); opacity: .6; } }
+
+  /* the neural network */
+  .net { grid-area: net; position: relative; min-height: 0; }
+  .net svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+  /* each layer has its own colour; the reading wave takes it, the writing pass is pink */
+  .net .n0, .net .e0, .net .lt0 { --lc: var(--l1); }
+  .net .n1, .net .e1, .net .lt1 { --lc: var(--l2); }
+  .net .n2, .net .e2, .net .lt2 { --lc: var(--l3); }
+  .net .n3, .net .e3, .net .lt3, .net .e4 { --lc: var(--l4); }
+  .net .n, .net .e { --wave: var(--lc); }
+  .net.writing .n, .net.writing .e { --wave: var(--c-response); }
+  .net .e { stroke: color-mix(in srgb, var(--lc) 22%, var(--rule)); stroke-width: 1; transition: stroke .2s, stroke-width .2s; }
+  .net .e.hot { stroke: var(--wave); stroke-width: 1.7; }
+  .net .n { fill: var(--card); stroke: color-mix(in srgb, var(--lc) 65%, var(--frame)); stroke-width: 1.8; transition: fill .2s, stroke .2s; }
+  .net .n.hot { fill: var(--wave); stroke: var(--wave); filter: drop-shadow(0 0 4px color-mix(in srgb, var(--wave) 70%, transparent)); }
+  .net .lt { font-family: var(--font-ui); font-size: 11px; font-weight: 700; fill: var(--lc); text-anchor: middle; }
+  .net .loop { fill: none; stroke: var(--rule); stroke-width: 1.5; stroke-dasharray: 4 4; transition: stroke .2s; }
+  .net .loop.hot { stroke: var(--c-response); animation: dash .5s linear infinite; }
+  .net .loop-lab { font-family: var(--font-ui); font-size: 10px; fill: var(--ink-3); text-anchor: middle; }
+  @keyframes dash { to { stroke-dashoffset: -16; } }
+  .net .ft { opacity: 0; }
+  .net.feeding .ft { animation: feed .8s linear infinite; }
+  @keyframes feed {
+    from { transform: translateX(-6px); opacity: 0; }
+    25% { opacity: 1; }
+    to { transform: translateX(46px); opacity: 0; }
+  }
+  .net.busy .n { animation: busy .24s ease-in-out infinite alternate; }
+  .net.busy .n:nth-of-type(3n) { animation-delay: .08s; }
+  .net.busy .n:nth-of-type(3n+1) { animation-delay: .16s; }
+  @keyframes busy { to { fill: var(--c-response); stroke: var(--c-response); } }
+  .net-note { position: absolute; left: 0; right: 0; bottom: -2px; text-align: center; font-size: .66em; color: var(--ink-3); }
+
+  /* output */
+  .out { grid-area: out; align-self: center; text-align: center; }
+  .outbox {
+    border: 2px solid var(--rule);
+    border-radius: 8px;
+    padding: 7px 8px 8px;
+    background: var(--card);
+    transition: border-color .3s;
+  }
+  .outbox.live { border-color: var(--c-response); }
+  .outbox small { display: block; font-size: .7em; color: var(--ink-2); }
+  .outbox b {
+    display: block;
+    min-height: 1.25em;
+    font-size: 1.45em;
+    line-height: 1.25;
+    color: var(--c-response);
+    white-space: pre;
+  }
+  .outbox b.pop { animation: pop .3s var(--ease); }
+  @keyframes pop { from { transform: scale(.6); opacity: 0; } to { transform: none; opacity: 1; } }
+
+  /* working values tray */
+  .tray { grid-area: tray; min-height: 0; display: flex; flex-direction: column; gap: 5px; }
+  .tray-head { display: flex; align-items: baseline; gap: 10px; font-size: .78em; white-space: nowrap; overflow: hidden; }
+  .tray-head b { font-weight: 600; }
+  .tray-head span { color: var(--ink-3); }
+  .tray-head .same-note { color: var(--ink); display: none; align-items: center; gap: 6px; font-weight: 600; animation: capIn .4s var(--ease) both; }
+  .tray.same .tray-head .sub { display: none; }
+  .tray-head .same-note::before { content: ""; width: 16px; height: 10px; border: 2px dashed var(--ink); border-radius: 3px; }
+  .tray.same .same-note { display: inline-flex; }
+  .tray-rows {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 50px minmax(0, 1fr);
+    grid-template-rows: repeat(4, minmax(0, 1fr));
+    row-gap: 4px;
+    column-gap: 8px;
+    border: 1.5px dashed var(--rule);
+    border-radius: 6px;
+    padding: 6px 8px;
+  }
+  .tlab { font-size: .66em; font-weight: 700; color: var(--lc); align-self: center; text-align: right; white-space: nowrap; }
+  .tlab::before {
+    content: "";
+    display: inline-block;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--lc);
+    margin-right: 5px;
+    vertical-align: 1px;
+  }
+  .tsegs { display: flex; gap: 2px; min-height: 0; border-radius: 3px; transition: box-shadow .2s; }
+  .tsegs.read { box-shadow: 0 0 0 2px var(--c-response); }
+  .tseg {
+    --k: var(--ink-3);
+    height: 100%;
+    flex: none;
+    border-radius: 2px;
+    background-color: var(--k);
+    background-image: repeating-linear-gradient(90deg, transparent 0 3px, color-mix(in srgb, var(--card) 45%, transparent) 3px 4px);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform .45s var(--ease) var(--d, 0s), width var(--wdur, .5s) linear, opacity .4s;
+  }
+  .tseg.on { transform: scaleX(1); }
+  .tseg.leave { opacity: 0; }
+  .tray.instant .tseg { transition: none; }
+  .tseg.system { --k: var(--c-system); }
+  .tseg.history { --k: var(--c-history); }
+  .tseg.question { --k: var(--c-question); }
+  .tseg.response { --k: var(--c-response); }
+  .same-wrap { grid-area: 1 / 2 / span 4 / 3; position: relative; pointer-events: none; }
+  .same-box {
+    position: absolute;
+    left: -4px; top: -4px; bottom: -4px;
+    border: 2px dashed var(--ink);
+    border-radius: 5px;
+    opacity: 0;
+    transition: opacity .5s;
+  }
+  .tray.same .same-box { opacity: 1; }
+  .tray-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: .72em; color: var(--ink-2); min-height: 1.2em; }
+  .tray-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .tray-legend i { width: 9px; height: 9px; border-radius: 2px; }
+  .tray-legend b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  /* counters */
+  .meta { grid-area: meta; display: flex; align-items: baseline; gap: 6px 20px; flex-wrap: wrap; font-size: .76em; color: var(--ink-2); }
+  .meta b { color: var(--ink); font-size: 1.45em; font-variant-numeric: tabular-nums; margin-left: 4px; }
+  .meta .memo { margin-left: auto; }
+  .meta .memo strong { color: var(--ink); }
+  .memo.flash strong { animation: memoFlash 1.2s var(--ease) 2; }
+  @keyframes memoFlash { 50% { color: var(--c-danger); } }
+
+  /* ---------- callout row under the scene ---------- */
+  .callout { grid-column: 1 / -1; position: relative; min-height: 60px; }
+  .callout > div { position: absolute; inset: 0; display: flex; align-items: center; gap: 18px; }
+  .callout .big {
+    font-family: var(--font-ui);
+    font-weight: 700;
+    font-size: clamp(19px, 1.6vw, 29px);
+    line-height: 1.15;
+  }
+  .callout .small { color: var(--ink-2); font-size: .9em; max-width: 60em; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  .chip {
+    font-family: var(--font-ui);
+    font-size: .9em;
+    padding: 2px 8px 3px;
+    border-radius: 4px;
+    border: 1.5px solid var(--c-question);
+    background: color-mix(in srgb, var(--c-question) 14%, var(--card));
+    white-space: pre;
+  }
+  .chip:nth-child(even) { background: var(--card); }
+  .callout .eq { font-family: var(--font-ui); color: var(--ink-2); }
+  .callout .eq b { color: var(--ink); }
+
+  /* =================== chart layer (last step) =================== */
+  .chart {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    gap: 12px;
+    font-family: var(--font-ui);
+  }
+  .chart-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px 24px; flex-wrap: wrap; }
+  .chart-head h2 { margin: 0; font-size: 1.25em; }
+  .chart-key { display: flex; gap: 18px; font-size: .82em; color: var(--ink-2); flex-wrap: wrap; }
+  .chart-key span { display: inline-flex; align-items: center; gap: 7px; }
+  .chart-key i { width: 14px; height: 14px; border-radius: 2px; }
+  .hatch {
+    background: repeating-linear-gradient(135deg, var(--ink-3) 0 3px, color-mix(in srgb, var(--ink-3) 35%, transparent) 3px 6px);
+  }
+  .plot { position: relative; min-height: 0; margin-left: 44px; border-left: 1.5px solid var(--frame); border-bottom: 1.5px solid var(--frame); }
+  .gridline { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--rule); }
+  .gridline span { position: absolute; right: calc(100% + 8px); top: -.65em; font-size: .72em; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .bars { position: absolute; inset: 0 6px 0 6px; display: flex; align-items: flex-end; gap: 5px; }
+  .bar {
+    flex: 1;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    transform: scaleY(0);
+    transform-origin: bottom;
+    transition: transform .55s var(--ease) calc(var(--i) * 45ms + .15s);
+  }
+  .chart.is-on .bar { transform: scaleY(1); }
+  .bar .new { background: var(--c-question); border-radius: 2px 2px 0 0; }
+  .xaxis { margin-left: 50px; margin-right: 6px; display: flex; gap: 5px; font-size: .72em; color: var(--ink-3); }
+  .xaxis span { flex: 1; text-align: center; font-variant-numeric: tabular-nums; }
+  .totals { display: flex; gap: 16px 40px; align-items: flex-end; flex-wrap: wrap; border-top: 1.5px solid var(--rule); padding-top: 12px; }
+  .totals .t b { display: block; font-size: clamp(26px, 2.4vw, 42px); line-height: 1; font-variant-numeric: tabular-nums; }
+  .totals .t span { font-size: .82em; color: var(--ink-2); }
+  .totals .t.alt b { color: var(--ink-2); }
+  .totals .foot { margin-left: auto; font-size: .76em; color: var(--ink-3); max-width: 22em; font-family: var(--font-text); }
+
+  /* =================== page 02: prompt caching =================== */
+
+  /* text served from cache: outlined in the cache colour */
+  .seg.hit { box-shadow: inset 0 0 0 2.5px var(--c-cache); }
+  .seg.date { background: var(--c-danger); }
+  .tseg.date { --k: var(--c-danger); }
+  .tseg.docs { --k: var(--c-docs); }
+  .tseg.cached { box-shadow: 0 0 0 2px var(--c-cache); }
+  .tseg.fromcache { animation: fromCache 1s var(--ease); }
+  @keyframes fromCache {
+    0% { transform: translateY(30px) scaleX(1); opacity: 0; }
+    60% { opacity: 1; }
+    100% { transform: none; }
+  }
+
+  /* the prompt cache: kept between requests */
+  .cache {
+    grid-area: cache;
+    border: 2px dashed color-mix(in srgb, var(--c-cache) 55%, var(--rule));
+    border-radius: 8px;
+    padding: 6px 10px 8px;
+    display: grid;
+    gap: 5px;
+    transition: border-color .3s, background .3s;
+  }
+  .cache.has { border-style: solid; border-color: var(--c-cache); background: color-mix(in srgb, var(--c-cache) 7%, transparent); }
+  .cache-head { display: flex; align-items: baseline; gap: 10px; font-size: .78em; white-space: nowrap; overflow: hidden; }
+  .cache-head b { color: var(--c-cache); font-weight: 700; }
+  .cache-head span { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; }
+  .cache-head .cache-flag, .cache-head .ttl, .cache-head b { flex: none; }
+  .cache-head .ttl { margin-left: auto; color: var(--ink); font-weight: 700; font-variant-numeric: tabular-nums; }
+  .cache-head .ttl.low { color: var(--c-danger); }
+  .cache-bar { display: flex; gap: 2px; height: 16px; }
+  .cseg {
+    --k: var(--ink-3);
+    height: 100%;
+    border-radius: 2px;
+    background-color: var(--k);
+    background-image: repeating-linear-gradient(90deg, transparent 0 3px, color-mix(in srgb, var(--card) 45%, transparent) 3px 4px);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform .6s var(--ease) var(--d, 0s), opacity .5s;
+  }
+  .cseg.on { transform: scaleX(1); }
+  .cseg.instant { transition: none; }
+  .cseg.leave { opacity: 0; }
+  .cseg.system { --k: var(--c-system); }
+  .cseg.docs { --k: var(--c-docs); }
+  .cseg.history { --k: var(--c-history); }
+  .cseg.question { --k: var(--c-question); }
+  .cseg.date { --k: var(--c-danger); }
+  .cache.hit { animation: cacheHit 1.1s var(--ease); }
+  @keyframes cacheHit { 40% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--c-cache) 35%, transparent); } }
+  .cache.miss { animation: cacheMiss .7s var(--ease); border-color: var(--c-danger); }
+  @keyframes cacheMiss {
+    20% { transform: translateX(-5px); }
+    40% { transform: translateX(4px); }
+    60% { transform: translateX(-3px); }
+    80% { transform: translateX(2px); }
+  }
+  .cache-flag {
+    font-size: .74em;
+    font-weight: 700;
+    border-radius: 999px;
+    padding: 0 8px 1px;
+    opacity: 0;
+    transition: opacity .3s;
+  }
+  .cache-flag.on { opacity: 1; }
+  .cache-flag.hit { color: var(--on-color); background: var(--c-cache); }
+  .cache-flag.miss { color: #fff; background: var(--c-danger); }
+  .cache-flag.write { color: var(--c-cache); border: 1.5px solid var(--c-cache); }
+
+  /* billing line */
+  .meta .bill b { color: var(--c-cache); }
+  .meta .bill small { color: var(--ink-3); margin-left: 4px; }
+
+  /* the cache marker inside a request packet */
+  .packet .mk {
+    margin: 3px 0;
+    border-top: 2px dashed var(--c-cache);
+    color: var(--c-cache);
+    font-size: .86em;
+    font-weight: 700;
+    padding-top: 1px;
+  }
+  .packet .row.d i { background: var(--c-danger); }
+
+  /* the app's stable beginning, in the client */
+  .sys-chip .policy { color: var(--c-docs); font-weight: 600; }
+
+  /* clock shown while time passes */
+  .clock {
+    position: absolute;
+    left: 36%; top: 42%;
+    transform: translate(-50%, -50%) scale(.9);
+    z-index: 6;
+    background: var(--card);
+    border: 2px solid var(--c-cache);
+    border-radius: 12px;
+    padding: 10px 18px;
+    text-align: center;
+    font-family: var(--font-ui);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .3s, transform .3s var(--ease);
+  }
+  .clock.on { opacity: 1; transform: translate(-50%, -50%); }
+  .clock b { display: block; font-size: 1.8em; font-variant-numeric: tabular-nums; }
+  .clock span { font-size: .8em; color: var(--ink-2); }
+
+  /* =================== explainer layers =================== */
+  .explain {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    gap: 18px;
+    font-family: var(--font-ui);
+  }
+  .explain h2 { margin: 0; font-size: 1.3em; }
+  .explain .lead { margin: 4px 0 0; font-family: var(--font-text); color: var(--ink-2); max-width: 54em; }
+  .explain .foot { font-size: .78em; color: var(--ink-3); font-family: var(--font-text); }
+
+  .reqs { display: grid; gap: 26px; align-content: center; }
+  .req { display: grid; grid-template-columns: 9.5em minmax(0, 1fr); gap: 16px; align-items: center; }
+  .req-name { font-weight: 700; }
+  .req-name small { display: block; font-weight: 400; color: var(--ink-2); font-size: .82em; }
+  .rbar { position: relative; display: flex; gap: 2px; height: 48px; }
+  .rbar > span {
+    height: 100%;
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    font-size: .78em;
+    font-weight: 600;
+    color: var(--on-color);
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .rbar .system { background: var(--c-system); }
+  .rbar .docs { background: var(--c-docs); }
+  .rbar .history { background: var(--c-history); }
+  .rbar .question { background: var(--c-question); }
+  .rbar .date { background: var(--c-danger); color: #fff; }
+  .rbar .tools { background: var(--c-tools); }
+  .rbar .cachedpart { box-shadow: inset 0 0 0 3px var(--c-cache); }
+  .rbar .missed { opacity: .45; }
+  .rbar > .marker {
+    overflow: visible;
+    position: absolute;
+    top: -12px; bottom: -12px;
+    width: 0;
+    border-left: 3px dashed var(--c-cache);
+    padding: 0;
+  }
+  .rbar .marker::after {
+    content: "cache marker";
+    position: absolute;
+    top: -18px; left: -40px;
+    width: 80px;
+    text-align: center;
+    font-size: .72em;
+    font-weight: 700;
+    color: var(--c-cache);
+  }
+  .verdict { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; margin-top: 8px; font-size: .9em; }
+  .verdict.ok { color: var(--c-cache); }
+  .verdict.bad { color: var(--c-danger); }
+  .brace { display: flex; gap: 2px; margin-top: 6px; font-size: .76em; color: var(--ink-2); }
+  .brace span { border-top: 2px solid currentColor; padding-top: 3px; text-align: center; }
+  .brace .c { color: var(--c-cache); }
+  .brace .n { color: var(--ink-2); }
+
+  .rule-list { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: .9em; }
+  .rule-list .tk { background: var(--card); border: 1.5px solid var(--rule); border-radius: 6px; padding: 3px 9px; }
+  .rule-list .arrow { color: var(--ink-3); }
+
+  /* price table */
+  .prices { width: 100%; border-collapse: collapse; font-size: .92em; align-self: center; }
+  .prices th, .prices td { text-align: left; padding: 12px 14px; border-bottom: 1.5px solid var(--rule); vertical-align: top; }
+  .prices th { font-size: .8em; color: var(--ink-2); font-weight: 600; }
+  .prices td:first-child { font-weight: 700; white-space: nowrap; }
+  .prices td b { color: var(--c-cache); }
+  .prices td small { display: block; color: var(--ink-3); font-family: var(--font-text); margin-top: 2px; }
+
+  /* the 20-question chart reuses page 01's chart styles */
+  .bar-c .cachepart { background: color-mix(in srgb, var(--c-cache) 75%, var(--card)); }
+
+  /* =================== page 06: RAG, on every question =================== */
+  .scene { grid-template-columns: minmax(0, .52fr) minmax(0, 1fr) minmax(56px, .11fr) minmax(0, 1.22fr); column-gap: 10px; }
+  .server .srv { grid-template-columns: auto minmax(0, 1fr) minmax(80px, auto); }
+  .cache { display: none; }
+  .meta .from-cache { display: none; }
+  .seg.p1, .pr.p1 { --k: var(--p-rag); background: var(--p-rag); }
+  .seg.p2 { background: color-mix(in srgb, var(--p-rag) 70%, var(--c-danger)); }
+  .seg.p3 { background: color-mix(in srgb, var(--p-rag) 55%, var(--c-doc2)); }
+  .tseg.p1 { --k: var(--p-rag); }
+  .tseg.p2 { --k: color-mix(in srgb, var(--p-rag) 70%, var(--c-danger)); }
+  .tseg.p3 { --k: color-mix(in srgb, var(--p-rag) 55%, var(--c-doc2)); }
+
+  /* the RAG service: part of your app */
+  .box.rag { border-color: color-mix(in srgb, var(--p-rag) 55%, var(--frame)); background: color-mix(in srgb, var(--p-rag) 4%, var(--card)); }
+  .box.rag .box-head { background: color-mix(in srgb, var(--p-rag) 14%, transparent); }
+  .box.rag .box-head b { color: var(--p-rag); }
+  .rg { flex: 1; min-height: 0; display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; gap: 9px; padding: 9px 11px 10px; font-family: var(--font-ui); font-size: .78em; }
+  .rg-sec { display: grid; gap: 4px; min-height: 0; transition: opacity .4s; }
+  .rg-sec.again { opacity: .3; }
+  .rg-lab { display: flex; align-items: center; gap: 7px; font-weight: 700; transition: color .3s; }
+  .rg-lab .no { width: 19px; height: 19px; border-radius: 50%; display: grid; place-items: center; background: var(--rule); font-size: .85em; flex: none; transition: background .3s, color .3s; }
+  .rg-lab small { margin-left: auto; color: var(--ink-3); font-weight: 400; }
+  .rg-sec.on .rg-lab .no { background: var(--p-rag); color: var(--on-color); }
+  .rg-sec.cur .rg-lab { color: var(--p-rag); }
+
+  .qslot { position: relative; border: 1.5px dashed var(--rule); border-radius: 7px; padding: 5px 9px; min-height: 2.3em; display: flex; align-items: center; gap: 8px; font-family: var(--font-text); transition: border-color .3s, background .3s; }
+  .qslot.has { border-style: solid; border-color: var(--c-question); background: color-mix(in srgb, var(--c-question) 8%, var(--card)); }
+  .qslot .ph { color: var(--ink-3); font-style: italic; }
+  .qslot .rw { flex: none; font-family: var(--font-ui); font-size: .85em; font-weight: 700; color: var(--on-color); background: var(--c-question); border-radius: 4px; padding: 0 5px; }
+
+  .erow { display: grid; grid-template-columns: minmax(0, 1.1fr) auto minmax(0, 1fr); align-items: center; gap: 8px; }
+  .erow .arr { color: var(--ink-3); font-weight: 700; }
+  .emodel.sm { padding: 4px 8px; column-gap: 7px; }
+  .emodel.sm .eglyph { width: 30px; height: 26px; }
+  .emodel.sm small { font-size: .78em; }
+  .qvec { border: 1.5px solid color-mix(in srgb, var(--c-embed) 70%, var(--rule)); border-radius: 7px; padding: 5px 8px; background: var(--card); display: flex; align-items: center; gap: 7px; min-height: 2.5em; }
+  .qvec small { color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .dbsec { grid-template-rows: auto minmax(0, 1fr) auto; }
+  .mapwrap { min-height: 0; border: 1.5px solid var(--rule); border-radius: 8px; background: color-mix(in srgb, var(--paper) 50%, transparent); padding: 2px 4px; display: flex; }
+  .mapwrap svg { flex: 1; min-height: 0; }
+  .map .star { fill: var(--c-question); stroke: var(--card); stroke-width: 1.5; }
+  .map .qlab { font-size: 9.5px; font-weight: 700; fill: var(--c-question); }
+  .map .qline { stroke: var(--c-question); stroke-width: 1.8; stroke-dasharray: 4 3; }
+  .map .ring { fill: none; stroke: var(--c-question); stroke-width: 1.4; stroke-dasharray: 3 4; opacity: .7; }
+  .topk { display: grid; gap: 3px; }
+  .hit-row { display: grid; grid-template-columns: 14px minmax(0, 1fr) 36px; gap: 6px; align-items: center; padding: 3px 7px; border-radius: 5px; background: var(--card); border: 1.5px solid var(--rule); }
+  .hit-row .rk { font-weight: 700; color: var(--p-rag); }
+  .hit-row .tx { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: var(--font-text); }
+  .hit-row .tx b { font-family: var(--font-ui); }
+  .hit-row .sc { font-variant-numeric: tabular-nums; text-align: right; font-weight: 700; }
+  .hit-row.weak { border-style: dashed; color: var(--ink-2); }
+
+  .prompt { position: relative; display: grid; gap: 3px; }
+  .prompt > .empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--ink-3); font-family: var(--font-text); font-style: italic; border: 1.5px dashed var(--rule); border-radius: 7px; }
+  .pr { display: grid; grid-template-columns: 9px minmax(0, 1fr); gap: 7px; align-items: center; padding: 2px 7px; border-radius: 5px; background: var(--card); border: 1.5px solid var(--rule); }
+  .pr i { width: 9px; height: 9px; border-radius: 2px; background: var(--k); }
+  .pr span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: var(--font-text); }
+  .pr span b { font-family: var(--font-ui); }
+  .pr.sys { --k: var(--c-system); }
+  .pr.c1 { --k: var(--p-rag); }
+  .pr.c2 { --k: color-mix(in srgb, var(--p-rag) 70%, var(--c-danger)); }
+  .pr.c3 { --k: color-mix(in srgb, var(--p-rag) 55%, var(--c-doc2)); }
+  .pr.q { --k: var(--c-question); }
+  .ptot { display: flex; justify-content: space-between; font-weight: 700; padding: 1px 2px 0; }
+  .ptot small { color: var(--ink-3); font-weight: 400; }
+</style>
+</head>
+<body data-prev="05-rag-build.html" data-next="07-rag-limits.html" data-topic="06">
+<div class="deck">
+  <header class="topbar">
+    <span class="sec">06</span>
+    <span class="name">Retrieval-augmented generation</span>
+    <span class="spacer"></span>
+    <a href="index.html">Agenda</a>
+  </header>
+
+  <main class="layout tl">
+    <aside class="tl-col">
+      <div class="tl-head">
+        <h1>RAG: from question to answer</h1>
+        <p class="sub">Find the right chunks, then let the LLM answer from them.</p>
+      </div>
+      <ol id="timeline" class="timeline"></ol>
+    </aside>
+
+    <section class="stage" aria-label="Animation" id="stage">
+      <div class="scene">
+
+        <!-- client -->
+        <div class="box client">
+          <div class="box-head"><b>Chat app</b><span>the user</span></div>
+          <div class="sys-chip" id="sys-chip"><span class="sq"></span><b>System prompt</b></div>
+          <div class="chat" id="chat">
+            <div class="msg user" data-from="1" data-id="q1">Can I carry unused leave days into next year?</div>
+            <div class="msg bot" data-from="7" data-first="Yes" data-id="a1">Yes, up to 5 days, to be used by 31 March. [Leave policy §4]</div>
+            <div class="msg user" data-from="8" data-id="q2">And if I work part-time?</div>
+          </div>
+          <div class="input"><span class="txt" id="typed"></span><span class="send" id="send">Send</span></div>
+        </div>
+
+        <!-- the RAG service -->
+        <div class="box rag">
+          <div class="box-head"><b>RAG service</b><span>part of your app</span></div>
+          <div class="rg">
+            <div class="rg-sec" id="sec-q">
+              <div class="rg-lab"><span class="no">1</span>Question</div>
+              <div class="qslot" id="qslot"></div>
+            </div>
+            <div class="rg-sec" id="sec-e">
+              <div class="rg-lab"><span class="no">2</span>Embed it<small>same model as page 05</small></div>
+              <div class="erow">
+                <div class="emodel sm" id="emodel"><span id="eglyph"></span><div><b>Embedding model</b><small>text in, numbers out</small></div></div>
+                <span class="arr">→</span>
+                <div class="qvec" id="qvec"><span data-show="2+" style="--delay:1.3s" id="qv"></span><small data-show="2+" style="--delay:1.5s">question vector</small></div>
+              </div>
+            </div>
+            <div class="rg-sec dbsec" id="sec-d">
+              <div class="rg-lab"><span class="no">3</span>Vector database<small>48 chunks from page 05</small></div>
+              <div class="mapwrap">
+                <svg class="map" viewBox="0 0 300 136" preserveAspectRatio="xMidYMid meet" aria-label="48 chunks placed by meaning; the question lands near the leave policy">
+                  <g class="dots" id="dots"></g>
+                  <g data-show="3+" style="--delay:.75s">
+                    <g id="qlines" data-show="3+" style="--delay:1.05s"></g>
+                    <circle class="ring" cx="116" cy="50" r="27" data-show="3+" style="--delay:1.05s"/>
+                    <path class="star" id="star" d="M116 39 l3.2 6.6 7.3 1 -5.3 5.1 1.3 7.2 -6.5 -3.4 -6.5 3.4 1.3 -7.2 -5.3 -5.1 7.3 -1 z"/>
+                    <text class="qlab" x="116" y="16" text-anchor="middle">the question</text>
+                  </g>
+                </svg>
+              </div>
+              <div class="topk">
+                <div class="hit-row" id="h1" data-show="3+" data-anim="left" style="--delay:1.4s"><span class="rk">1</span><span class="tx"><b>Leave §4</b> Up to 5 unused days, to be used by 31 March.</span><span class="sc num">0.89</span></div>
+                <div class="hit-row" id="h2" data-show="3+" data-anim="left" style="--delay:1.6s"><span class="rk">2</span><span class="tx"><b>Leave §3</b> 25 days a year; pro rata for part-time staff.</span><span class="sc num">0.81</span></div>
+                <div class="hit-row weak" id="h3" data-show="3+" data-anim="left" style="--delay:1.8s"><span class="rk">3</span><span class="tx"><b>Expenses §7</b> Unused travel budget does not carry over.</span><span class="sc num">0.74</span></div>
+              </div>
+            </div>
+            <div class="rg-sec" id="sec-p">
+              <div class="rg-lab"><span class="no">4</span>Prompt for the LLM</div>
+              <div class="prompt">
+                <div class="empty" data-show="0-3">Built from the chunks that are found</div>
+                <div class="pr sys" id="pr-sys" data-show="5+" style="--delay:.7s"><i></i><span><b>System prompt</b> Answer only from the sources below, and cite them.</span></div>
+                <div class="pr c1" id="pr-1" data-show="4+" style="--delay:.7s"><i></i><span><b>[1] Leave §4</b> Up to 5 unused days, to be used by 31 March.</span></div>
+                <div class="pr c2" id="pr-2" data-show="4+" style="--delay:.95s"><i></i><span><b>[2] Leave §3</b> 25 days a year; pro rata for part-time staff.</span></div>
+                <div class="pr c3" id="pr-3" data-show="4+" style="--delay:1.2s"><i></i><span><b>[3] Expenses §7</b> Unused travel budget does not carry over.</span></div>
+                <div class="pr q" id="pr-q" data-show="5+" style="--delay:.9s"><i></i><span><b>Question</b> Can I carry unused leave days into next year?</span></div>
+                <div class="ptot" data-show="5+" style="--delay:1.2s"><span class="num">2,014 tokens</span><small>the library is 24,000</small></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- network -->
+        <div class="wire">
+          <div class="lane req"><span>request</span></div>
+          <div class="lane res"><span>response</span></div>
+          <div class="packet" id="packet"></div>
+          <div class="stream" id="stream"><i></i><i></i><i></i><i></i></div>
+          <i class="solo" id="solo"></i>
+        </div>
+
+        <!-- model -->
+        <div class="box server">
+          <div class="box-head"><b>LLM</b><span>on the provider's servers</span></div>
+          <div class="srv">
+            <div class="area-label wl">Context window<small>the text it sees</small></div>
+            <div class="col" id="cw"><div class="cw-box"></div><div class="over-zone" id="over-zone"></div></div>
+            <div class="wu" id="wu"><b id="used" class="num">0</b> of 32,000<br>tokens (demo)</div>
+            <div class="status idle" id="status"><i></i><span>Waiting</span></div>
+            <div class="net" id="net"><svg id="net-svg" viewBox="0 0 330 205" preserveAspectRatio="xMidYMid meet" aria-label="Neural network with four layers"></svg></div>
+            <div class="out"><div class="outbox" id="outbox"><small>Next token</small><b id="out-tok"></b></div></div>
+            <div class="tray" id="tray">
+              <div class="tray-head"><b>Working values</b><span class="sub">for this request</span></div>
+              <div class="tray-rows">
+                <div class="tlab" style="grid-area:1/1;--lc:var(--l1)">Layer 1</div><div class="tsegs" style="grid-area:1/2"></div>
+                <div class="tlab" style="grid-area:2/1;--lc:var(--l2)">Layer 2</div><div class="tsegs" style="grid-area:2/2"></div>
+                <div class="tlab" style="grid-area:3/1;--lc:var(--l3)">Layer 3</div><div class="tsegs" style="grid-area:3/2"></div>
+                <div class="tlab" style="grid-area:4/1;--lc:var(--l4)">Layer 4</div><div class="tsegs" style="grid-area:4/2"></div>
+              </div>
+              <div class="tray-legend" id="tray-legend"></div>
+            </div>
+            <div class="cache" id="cache">
+              <div class="cache-head"><b>Prompt cache</b><span id="cache-note">empty</span><span class="cache-flag" id="cache-flag"></span><span class="ttl" id="ttl"></span></div>
+              <div class="cache-bar" id="cache-bar"></div>
+            </div>
+            <div class="meta">
+              <span>Through the network <b id="c-net" class="num">0</b></span>
+              <span class="from-cache">From cache <b id="c-cache" class="num">0</b></span>
+              <span class="bill">Billed as <b id="c-bill" class="num">0</b> tokens<small id="c-base"></small></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="callout">
+          <div data-show="0"><span class="big mark">The index is ready. Now a question arrives.</span><span class="small">The chat app, the RAG service with its vector database, and the LLM.</span></div>
+          <div data-show="1"><span class="big mark">The user asks in the chat.</span><span class="small">The question goes to the RAG service first, not straight to the LLM.</span></div>
+          <div data-show="2"><span class="big mark">Same embedding model, same kind of vector.</span><span class="small">That's what makes the question comparable with the chunks.</span></div>
+          <div data-show="3"><span class="big mark">The 3 nearest chunks win: top K, with K = 3.</span><span class="small">Number 3 shares words with the question, not its meaning.</span></div>
+          <div data-show="4"><span class="big mark">The vectors found the chunks. Their text is what gets sent.</span></div>
+          <div data-show="5"><span class="big num mark">2,014 tokens instead of 24,000.</span><span class="small">System prompt, the chunks with their sources, then the question.</span></div>
+          <div data-show="6"><span class="big mark">The LLM only knows what's in its window.</span><span class="small">Three chunks out of 48. It never sees the rest.</span></div>
+          <div data-show="7"><span class="big mark">The answer cites its source.</span><span class="small">The labels travelled with the chunk text.</span></div>
+          <div data-show="8"><span class="big mark">A follow-up needs the history.</span><span class="small">A quick LLM call rewrites it into a standalone question. Then steps 2 to 4 run again.</span></div>
+          <div data-show="9"><span class="big mark">Ask, embed, search, bring, answer.</span><span class="small">It scales to libraries far bigger than any window.</span></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script src="assets/session.js?v=7"></script>
+<script src="assets/deck.js?v=6"></script>
+<script src="assets/model-scene.js?v=4"></script>
+<script src="assets/flow.js?v=2"></script>
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const T = Deck.timeline();
+  const stage = $("stage");
+  const fly = (a, b, html, o) => Flow.fly(stage, typeof a === "string" ? $(a) : a, typeof b === "string" ? $(b) : b, html, o);
+  const M = ModelScene({
+    limit: 32000,
+    trayScale: 2600,
+    timeline: T,
+    kinds: {
+      system:   { name: "System prompt", color: "var(--c-system)" },
+      p1:       { name: "Leave §4",      color: "var(--p-rag)" },
+      p2:       { name: "Leave §3",      color: "color-mix(in srgb, var(--p-rag) 70%, var(--c-danger))" },
+      p3:       { name: "Expenses §7",   color: "color-mix(in srgb, var(--p-rag) 55%, var(--c-doc2))" },
+      question: { name: "Question",      color: "var(--c-question)" },
+      response: { name: "Answer",        color: "var(--c-response)" },
+    },
+  });
+  const { tag } = M;
+
+  /* ---------- the RAG service ---------- */
+  $("eglyph").innerHTML = Flow.glyph();
+  $("qv").innerHTML = Flow.vg(99, 4);          // close to chunk §4's vector on page 05
+  $("dots").innerHTML = Flow.map();
+  $("qlines").innerHTML = Object.values(Flow.HITS).map(([x, y]) => `<line class="qline" x1="${Flow.Q[0]}" y1="${Flow.Q[1]}" x2="${x}" y2="${y}"/>`).join("");
+  function markHits(on) {
+    $("dots").classList.toggle("dim", on);
+    Object.keys(Flow.HITS).forEach((i) => $("dots").querySelector(`[data-i="${i}"]`).classList.toggle("hit", on));
+  }
+  const Q1 = "Can I carry unused leave days into next year?";
+  const Q2 = "How many unused leave days can part-time staff carry over?";
+  function setQ(step) {
+    const q = $("qslot");
+    q.classList.toggle("has", step >= 1);
+    q.innerHTML = step >= 8 ? `<span class="rw">Rewritten</span><span>${Q2}</span>`
+      : step >= 1 ? `<span>${Q1}</span>` : `<span class="ph">Waiting for a question</span>`;
+  }
+  const SECS = ["sec-q", "sec-e", "sec-d", "sec-p"];
+  const CUR = [null, "sec-q", "sec-e", "sec-d", "sec-d", "sec-p", "sec-p", null, "sec-q", null];
+  const ON = [-1, 0, 1, 2, 3, 3, 3, 3, 0, 3];
+  function sections(step) {
+    SECS.forEach((id, i) => {
+      $(id).classList.toggle("on", i <= ON[step]);
+      $(id).classList.toggle("cur", id === CUR[step]);
+      $(id).classList.toggle("again", step === 8 && i > 0);
+    });
+  }
+
+  /* ---------- the request and the answer ---------- */
+  const REQ = { rows: [["system", 500], ["p1", 500], ["p2", 500], ["p3", 500], ["question", 14]], mark: 0 };
+  const ANSWER = 40;
+  const S = [];
+  for (let i = 0; i <= 5; i++) S[i] = { status: ["idle", "Waiting"] };
+  S[6] = { win: tag(REQ), status: ["idle", "Loaded 2,014 tokens"] };
+  S[7] = { win: [...tag(REQ), ["response", ANSWER, ""]], tray: [...tag(REQ), ["response", ANSWER, ""]],
+           n: [2014, 0, 2014, 0], status: ["idle", `Answer finished: ${ANSWER} tokens`] };
+  S[8] = S[9] = S[7];
+
+  function settle(step) {
+    M.settle(S[step], step);
+    setQ(step);
+    sections(step);
+    markHits(step >= 3);
+    $("emodel").classList.remove("busy");
+  }
+  const busy = (on) => $("emodel").classList.toggle("busy", on);
+
+  const PLAY = {
+    1() {
+      M.hideNew(1);
+      setQ(0);
+      const end = M.typeInput(Q1, 250);
+      T.at(end, () => M.reveal(M.bubble("q1")));
+      T.at(end + 350, () => fly(M.bubble("q1"), "qslot", "Can I carry unused leave…", { cls: "q" }));
+      T.at(end + 1150, () => setQ(1));
+    },
+    2() {
+      fly("qslot", "emodel", "Can I carry unused leave…", { cls: "q", ms: 650 });
+      T.at(700, () => busy(true));
+      T.at(1350, () => busy(false));
+    },
+    3() {
+      markHits(false);
+      fly("qv", "star", Flow.vg(99, 4), { cls: "emb", ms: 750 });
+      T.at(1250, () => markHits(true));
+    },
+    4() {
+      ["h1", "h2", "h3"].forEach((h, i) =>
+        fly(h, "pr-" + (i + 1), $(h).querySelector("b").textContent, { cls: "doc", delay: i * 250 }));
+    },
+    5() {
+      fly("sys-chip", "pr-sys", "System prompt", { cls: "sys" });
+      fly("qslot", "pr-q", "Question", { cls: "q", delay: 200 });
+    },
+    6() {
+      M.sendRequest(REQ, 0, () => { M.setWin(tag(REQ), "fill"); M.setStatus(S[6].status); }, { title: "Prompt" });
+    },
+    7() {
+      M.hideNew(7);
+      const t = M.runReading(REQ, { firstToken: "Yes", bubble: M.bubble("a1"), n: S[7].n, statusEnd: ["writing", "Writing the answer"] });
+      M.runWriting(tag(REQ), {
+        slow: [",", "up", "to"], rest: ["5", "days", "by", "31", "March", ".", "[Leave", "policy", "§4]"],
+        fastMs: 1200, bubble: M.bubble("a1"), start: t + 200, answer: ANSWER,
+      });
+    },
+    8() {
+      M.hideNew(8);
+      setQ(7);
+      sections(7);
+      const end = M.typeInput(M.textOf("q2"), 250);
+      T.at(end, () => M.reveal(M.bubble("q2")));
+      T.at(end + 350, () => fly(M.bubble("q2"), "qslot", "And if I work part-time?", { cls: "q" }));
+      T.at(end + 1150, () => { setQ(8); sections(8); });
+    },
+  };
+
+  // reveal delays only when stepping forward; a jump shows everything at once
+  const instant = (forward) => stage.classList.toggle("nodelay", !forward);
+  function render(step, prev) {
+    const forward = prev === step - 1 && !Deck.reduced();
+    instant(forward);
+    T.clear();
+    Flow.clear(stage);
+    if (!forward || !PLAY[step]) return settle(step);
+    settle(prev);
+    M.showChat(step);
+    sections(step);
+    PLAY[step]();
+  }
+
+  Deck.init({
+    render,
+    groupColors: {
+      "Find the chunks": "var(--p-rag)",
+      "Answer": "var(--l3)",
+      "Follow-ups": "var(--c-history)",
+      "Next": "var(--c-danger)",
+    },
+    steps: [
+      {
+        title: "From question to answer",
+        body: `<p>The index from page 05 is ready. Three parts handle each question: the <strong>chat app</strong>, the <strong>RAG service</strong> with its vector database, and the <strong>LLM</strong>.</p>`,
+        notes: `<ul>
+          <li>The RAG service is your code. It calls the embedding model and the vector database, builds the prompt, then calls the LLM.</li>
+          <li>The LLM never searches by itself: it only reads what the service sends.</li></ul>`,
+      },
+      {
+        group: "Find the chunks",
+        title: "Ask in the chat",
+        body: `<p>"Can I carry unused leave days into next year?" goes from the chat app to the <strong>RAG service</strong>, not straight to the LLM.</p>`,
+        notes: `<ul><li>Same question as on the CAG pages, so the audience can compare.</li></ul>`,
+      },
+      {
+        group: "Find the chunks",
+        title: "Embed the question",
+        body: `<p>The question goes through the <strong>same embedding model</strong> that embedded the chunks, and becomes a vector.</p>`,
+        notes: `<ul><li>Same model, or the distances mean nothing.</li>
+          <li>The question's vector has almost the same shape as chunk §4's vector on page 05: similar meaning, similar numbers.</li></ul>`,
+      },
+      {
+        group: "Find the chunks",
+        title: "Search for the top K",
+        body: `<p>The vector database returns the <strong>3 nearest chunks</strong> (top K, here K = 3), each with a similarity score.</p>`,
+        notes: `<ul>
+          <li>Number 3 shares words ("unused", "carry over") but is about travel budgets. Similar isn't always relevant: page 07.</li>
+          <li>K is a setting. Too few can miss the answer; too many dilute the prompt and cost more.</li></ul>`,
+      },
+      {
+        group: "Find the chunks",
+        title: "Fetch their text",
+        body: `<p>The vectors found the chunks. Now their <strong>text</strong> and source labels are taken from the database.</p>`,
+        notes: `<ul><li>This is why page 05 stored the text next to each vector.</li></ul>`,
+      },
+      {
+        group: "Answer",
+        title: "Build the prompt",
+        body: `<p>System prompt, the three chunks with their sources, then the question: <strong>2,014 tokens</strong> instead of the whole 24,000.</p>`,
+        notes: `<ul>
+          <li>The system prompt tells the model to answer only from the sources, cite them, and say so when the answer isn't there.</li>
+          <li>Compare with CAG on page 03: 24,512 tokens per question.</li></ul>`,
+      },
+      {
+        group: "Answer",
+        title: "Send it to the LLM",
+        body: `<p>The prompt fills the LLM's context window. The model knows <strong>only what's in it</strong>: three chunks out of 48.</p>`,
+        notes: `<ul><li>The same stateless model from topic 01.</li></ul>`,
+      },
+      {
+        group: "Answer",
+        title: "The LLM answers",
+        body: `<p>The LLM writes the answer from the chunks, <strong>cites its source</strong>, and the answer goes back to the user.</p>`,
+        notes: `<ul><li>If the right chunk wasn't found, the model can't use it. Answers are only as good as retrieval.</li></ul>`,
+      },
+      {
+        group: "Follow-ups",
+        title: "Rewrite follow-up questions",
+        body: `<p>"And if I work part-time?" means nothing on its own. A quick LLM call uses the chat history to rewrite it into a <strong>standalone question</strong>. Then the search runs again.</p>`,
+        notes: `<ul>
+          <li>Statelessness from topic 01 again: neither the embedding model nor the vector database knows the conversation.</li>
+          <li>Without the rewrite, the search looks for "part-time" alone and may return the wrong chunks.</li>
+          <li>The chat history also goes into the final prompt, so the answer reads naturally.</li></ul>`,
+      },
+      {
+        group: "Next",
+        title: "Search, pick, bring",
+        body: `<p>RAG scales to libraries far bigger than any window, updates one document at a time, can filter by permissions, and cites its sources.</p>
+               <p>Next: <strong>where it stops working</strong>.</p>`,
+        notes: `<ul><li>Bridge to topic 07: problems with good fixes, and problems that need a different approach.</li></ul>`,
+      },
+    ],
+  });
+})();
+</script>
+</body>
+</html>

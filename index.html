@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RAG, CAG and KAG</title>
+<link rel="stylesheet" href="assets/deck.css?v=8">
+<style>
+  body {
+    height: 100vh;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    overflow: hidden;
+  }
+
+  /* =================== top bar: brand, session timeline, theme =================== */
+  .bar {
+    position: relative;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 28px;
+    padding: 14px 28px;
+    border-bottom: 1.5px solid var(--rule);
+    background: color-mix(in srgb, var(--paper) 88%, transparent);
+    backdrop-filter: blur(6px);
+    font-family: var(--font-ui);
+  }
+  .brand {
+    font-weight: 700;
+    font-stretch: 88%;
+    font-size: 1.45em;
+    letter-spacing: -.01em;
+    white-space: nowrap;
+  }
+  .brand .c { color: var(--p-cag); }
+  .brand .r { color: var(--p-rag); }
+  .brand .k { color: var(--p-kag); }
+
+  /* =================== the three scenes =================== */
+  .main {
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 22px;
+    padding: 18px 28px 14px;
+  }
+  .lede {
+    margin: 0;
+    font-size: clamp(17px, 1.35vw, 24px);
+    color: var(--ink-2);
+    max-width: 52em;
+  }
+  .lede strong { color: var(--ink); font-weight: 600; }
+
+  .cols {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 22px;
+    min-height: 0;
+  }
+  .pcol {
+    --c: var(--accent);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 16px 18px 16px;
+    border: 1.5px solid color-mix(in srgb, var(--c) 35%, var(--rule));
+    border-radius: 12px;
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--c) 9%, transparent), transparent 40%),
+      var(--sheet);
+    cursor: pointer;
+    transition: opacity .35s, border-color .3s, box-shadow .3s, transform .3s var(--ease);
+  }
+  .pcol:hover { border-color: color-mix(in srgb, var(--c) 70%, var(--rule)); }
+  .pcol.active {
+    border-color: var(--c);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--c) 20%, transparent), 6px 6px 0 color-mix(in srgb, var(--c) 25%, var(--shadow));
+    transform: translate(-2px, -2px);
+  }
+  .cols.paused .pc-status::after { content: "Paused. Press P to resume."; margin-left: 10px; font-weight: 400; color: var(--ink-3); }
+
+  .pc-head { display: flex; align-items: baseline; gap: 12px; font-family: var(--font-ui); }
+  .pc-head b { font-size: clamp(26px, 2.3vw, 40px); line-height: 1; color: var(--c); letter-spacing: -.01em; }
+  .pc-head span { color: var(--ink-2); font-size: .92em; }
+  .pc-tag { font-family: var(--font-ui); font-weight: 700; font-size: 1.05em; margin-top: -4px; }
+
+  .pc-scene { border-top: 1.5px dashed var(--rule); border-bottom: 1.5px dashed var(--rule); padding: 12px 0 6px; }
+
+  .pc-status {
+    font-family: var(--font-ui);
+    font-weight: 600;
+    font-size: .9em;
+    min-height: 2.6em;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .pc-status::before {
+    content: "";
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--c);
+    margin-top: .45em;
+    flex: none;
+  }
+  .cols:not(.paused) .pc-status::before { animation: beat .9s ease-in-out infinite; }
+  @keyframes beat { 50% { transform: scale(1.6); opacity: .6; } }
+  .pc-q { margin: 0; font-family: var(--font-text); color: var(--ink-2); font-size: .95em; }
+  .pc-foot { margin-top: auto; font-family: var(--font-ui); font-size: .78em; color: var(--ink-3); display: flex; justify-content: space-between; gap: 10px; }
+
+  /* =================== bottom strip: colour key and keys =================== */
+  .strip {
+    display: flex;
+    align-items: center;
+    gap: 8px 22px;
+    flex-wrap: wrap;
+    padding: 10px 28px 14px;
+    border-top: 1.5px solid var(--rule);
+    font-family: var(--font-ui);
+    font-size: .8em;
+    color: var(--ink-2);
+  }
+  .strip h2 { font-size: 1em; margin: 0; color: var(--ink); }
+  .strip .tk { font-weight: 500; }
+  .strip .sep { width: 1.5px; height: 16px; background: var(--rule); }
+  .layer-strip { display: inline-flex; gap: 2px; margin-right: 6px; vertical-align: -1px; }
+  .layer-strip i { width: 9px; height: 9px; border-radius: 50%; }
+  .strip .keys { margin-left: auto; color: var(--ink-3); }
+  .strip kbd {
+    font-family: var(--font-ui);
+    color: var(--ink-2);
+    border: 1px solid var(--rule);
+    border-bottom-width: 2px;
+    border-radius: 3px;
+    padding: 0 5px;
+  }
+
+  @media (max-width: 1100px) {
+    body { height: auto; overflow: auto; }
+    .bar { flex-wrap: wrap; position: sticky; top: 0; }
+    .cols { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header class="bar">
+  <div class="brand"><span class="r">RAG</span>, <span class="c">CAG</span> and <span class="k">KAG</span></div>
+  <nav class="timeline-nav" aria-label="Session"><ol class="tn" id="tn"></ol></nav>
+  <button type="button" class="theme-btn" id="theme-btn"></button>
+</header>
+
+<main class="main">
+  <p class="lede">A model only knows what it was trained on and what is in its <strong>context window</strong>. Here are three ways to put your own knowledge there.</p>
+  <div class="cols" id="cols"></div>
+</main>
+
+<footer class="strip" aria-label="Colour key">
+  <h2>Colours</h2>
+  <span class="tk system">System prompt</span>
+  <span class="tk history">Earlier turns</span>
+  <span class="tk question">New question</span>
+  <span class="tk response">Answer</span>
+  <span class="tk docs">Documents</span>
+  <span class="sep"></span>
+  <span><span class="layer-strip"><i style="background:var(--l1)"></i><i style="background:var(--l2)"></i><i style="background:var(--l3)"></i><i style="background:var(--l4)"></i></span>Model layers</span>
+  <span class="keys"><kbd>Enter</kbd> start <kbd>1</kbd>–<kbd>0</kbd> open a topic <kbd>P</kbd> pause <kbd>T</kbd> theme</span>
+</footer>
+
+<script src="assets/session.js?v=7"></script>
+<script src="assets/patterns.js?v=2"></script>
+<script>
+  // ---------- the session (shared with every topic page) ----------
+  const ACTS = SessionNav.ACTS;
+  const range = SessionNav.range;
+  const byNumber = SessionNav.ready();
+  const FINAL_STATUS = {
+    cag: "Loaded once, reused for every question",
+    rag: "Each question brings its own passages",
+    kag: "Connected facts, not loose passages",
+  };
+
+  // pointing at a pattern in the top bar highlights its column
+  SessionNav.render(document.getElementById("tn"), {
+    onEnter: (p) => setActive(p),
+    onLeave: () => setActive(null),
+    onOpen: (p) => setActive(p),
+  });
+
+  // ---------- the three columns ----------
+  const cols = document.getElementById("cols");
+  const scenes = {}, statusEl = {}, colEl = {};
+  ACTS.filter((a) => a.p).forEach((act) => {
+    const col = document.createElement("section");
+    col.className = "pcol";
+    col.style.setProperty("--c", act.c);
+    col.setAttribute("aria-label", `${act.name}: ${act.tag}`);
+    col.innerHTML = `
+      <div class="pc-head"><b>${act.p.toUpperCase()}</b><span>${act.full}</span></div>
+      <div class="pc-tag">${act.tag}</div>
+      <div class="pc-scene"></div>
+      <div class="pc-status" aria-live="polite"></div>
+      <p class="pc-q">${act.q}</p>
+      <div class="pc-foot"><span>Topics ${range(act)}</span><span>Click to restart</span></div>`;
+    const sc = PatternScenes.create(act.p);
+    col.querySelector(".pc-scene").appendChild(sc.svg);
+    cols.appendChild(col);
+    scenes[act.p] = sc;
+    statusEl[act.p] = col.querySelector(".pc-status");
+    colEl[act.p] = col;
+    col.addEventListener("click", () => restart(act.p));
+  });
+  const ORDER = ["cag", "rag", "kag"];
+
+  // highlight one column (pointing at its part of the session in the top bar)
+  function setActive(kind) {
+    ORDER.forEach((k) => colEl[k].classList.toggle("active", k === kind));
+  }
+  function rest(kind) {
+    scenes[kind].stop();
+    scenes[kind].final();
+    statusEl[kind].textContent = FINAL_STATUS[kind];
+  }
+
+  // ---------- all three scenes loop continuously ----------
+  const LOOP_GAP = 1800;   // pause on the last frame before starting again
+  const loopTimer = {};
+  let paused = false;
+
+  function loop(kind) {
+    if (paused) return;
+    scenes[kind].play({
+      onStatus: (t) => (statusEl[kind].textContent = t),
+      onDone: () => {
+        clearTimeout(loopTimer[kind]);
+        loopTimer[kind] = setTimeout(() => loop(kind), LOOP_GAP);
+      },
+    });
+  }
+  function restart(kind) {
+    if (paused) return;
+    clearTimeout(loopTimer[kind]);
+    scenes[kind].stop();
+    loop(kind);
+  }
+  // staggered starts, so the three scenes don't move in step
+  function startAll() {
+    paused = false;
+    cols.classList.remove("paused");
+    ORDER.forEach((k, i) => {
+      clearTimeout(loopTimer[k]);
+      scenes[k].stop();
+      loopTimer[k] = setTimeout(() => loop(k), 300 + i * 1100);
+    });
+  }
+  function pauseAll() {
+    paused = true;
+    cols.classList.add("paused");
+    ORDER.forEach((k) => { clearTimeout(loopTimer[k]); rest(k); });
+  }
+  const togglePause = () => (paused ? startAll() : pauseAll());
+
+  ORDER.forEach(rest);
+  startAll();
+
+  // ---------- theme: dark is the default ----------
+  const root = document.documentElement;
+  const themeBtn = document.getElementById("theme-btn");
+  function syncTheme() {
+    const light = root.dataset.theme === "light";
+    themeBtn.innerHTML = `<i></i>${light ? "Dark theme" : "Light theme"}`;
+  }
+  function toggleTheme() {
+    root.dataset.theme = root.dataset.theme === "light" ? "dark" : "light";
+    try { localStorage.setItem("deck-theme", root.dataset.theme); } catch (e) {}
+    syncTheme();
+  }
+  try {
+    const t = localStorage.getItem("deck-theme");
+    if (t) root.dataset.theme = t;
+  } catch (e) {}
+  syncTheme();
+  themeBtn.addEventListener("click", toggleTheme);
+
+  // ---------- keyboard ----------
+  // keys sort as strings: "10" is an integer-like key and would otherwise come first
+  const firstReady = byNumber[Object.keys(byNumber).sort()[0]];
+  document.addEventListener("keydown", (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.target instanceof Element && e.target.closest("button, a")) return;
+    if ((e.key === "Enter" || e.key === "ArrowRight" || e.key === "PageDown") && firstReady) location.href = firstReady;
+    else if (e.key === "t" || e.key === "T") toggleTheme();
+    else if (e.key === "p" || e.key === "P") togglePause();
+    else if (/^[0-9]$/.test(e.key)) {
+      const n = e.key === "0" ? "10" : "0" + e.key;
+      if (byNumber[n]) location.href = byNumber[n];
+    }
+  });
+</script>
+</body>
+</html>

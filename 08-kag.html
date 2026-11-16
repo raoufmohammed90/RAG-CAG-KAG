@@ -1,0 +1,690 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KAG</title>
+<link rel="stylesheet" href="assets/deck.css?v=8">
+<link rel="stylesheet" href="assets/flow.css?v=2">
+<link rel="stylesheet" href="assets/flowline.css?v=2">
+<style>
+  /* =================== page 08: KAG as a stage-by-stage flow =================== */
+  :root { --t-person: var(--c-history); --t-team: var(--c-docs); --t-role: var(--c-system); --t-rule: var(--p-rag); --t-policy: var(--c-tools); }
+  .t-person { --tc: var(--t-person); } .t-team { --tc: var(--t-team); } .t-role { --tc: var(--t-role); } .t-rule { --tc: var(--t-rule); } .t-policy { --tc: var(--t-policy); }
+
+  /* the two diagrams */
+  .fdiag.build { grid-template-columns: repeat(5, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); }
+  #n-schema { grid-area: 1 / 1; }
+  #n-gather { grid-area: 2 / 1; }
+  #n-chunk { grid-area: 2 / 2; }
+  #n-extract { grid-area: 1 / 3 / 3 / 4; }
+  #n-align { grid-area: 1 / 4 / 3 / 5; }
+  #n-store { grid-area: 1 / 5 / 3 / 6; }
+  .fdiag.ask { grid-template-columns: repeat(6, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); column-gap: 26px; }
+  #n-q { grid-area: 1 / 1; } #n-plan { grid-area: 1 / 2; } #n-look { grid-area: 1 / 3; } #n-fall { grid-area: 1 / 4; } #n-ded { grid-area: 1 / 5; } #n-ans { grid-area: 1 / 6; }
+  #n-built { grid-area: 2 / 1 / 3 / 3; justify-self: start; width: 82%; }
+
+  .flyer.fact { --fc: var(--p-kag); }
+  .flyer.plan { --fc: var(--l3); }
+  .flyer.ans { --fc: var(--c-response); }
+
+  /* stage 0: the two lanes */
+  .lanes { display: grid; gap: 22px; align-content: center; }
+  .lane { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 14px; align-items: center; }
+  .lane > b { font-size: 1.05em; }
+  .lane > b small { display: block; font-weight: 400; color: var(--ink-3); font-size: .8em; }
+  .lane .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .lane .row i { font-style: normal; color: var(--ink-3); font-weight: 700; }
+
+  /* stage 1: schema and documents */
+  .two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; min-height: 0; }
+  .experts { display: flex; align-items: center; gap: 10px; color: var(--ink-2); }
+  .experts svg { width: 44px; height: 32px; fill: none; stroke: var(--c-system); stroke-width: 2; stroke-linecap: round; }
+  .rels { display: grid; gap: 4px; }
+  .rels div { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .rels .r { color: var(--p-kag); font-weight: 700; }
+  .doc { display: grid; grid-template-columns: 46px minmax(0, 1fr); column-gap: 10px; align-items: center; padding: 5px 9px; border: 1.5px solid var(--rule); border-left: 4px solid var(--c-docs); border-radius: 8px; background: var(--sheet); }
+  .doc .ft { grid-row: span 2; text-align: center; font-weight: 700; font-size: .8em; padding: 3px 0; border-radius: 4px; background: var(--c-docs); color: var(--on-color); }
+  .doc span { font-family: var(--font-text); color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .doc[data-s] { transform: translateX(30px); }
+  .doc[data-s].on { transform: none; }
+
+  /* stage 2: chunking */
+  .docx { display: flex; flex-direction: column; gap: 0; padding: 6px 8px; border: 1.5px solid var(--rule); border-left: 4px solid var(--c-docs); border-radius: 8px; background: var(--card); transition: gap .6s var(--ease), padding .6s var(--ease), background .6s, border-color .6s; }
+  .docx .dn { font-weight: 700; padding-bottom: 4px; }
+  .part { position: relative; padding: 4px 8px; border: 1.5px solid transparent; border-radius: 6px; font-family: var(--font-text); line-height: 1.4; transition: border-color .5s, background .5s; }
+  .part b { font-family: var(--font-ui); }
+  .part + .part::before { content: ""; position: absolute; left: -6px; right: -6px; top: -1px; border-top: 2.5px dashed var(--c-danger); transform: scaleX(0); transform-origin: left; transition: transform .45s var(--ease) var(--cd, 0s), opacity .3s; }
+  .part:nth-child(3) { --cd: .2s; } .part:nth-child(4) { --cd: .4s; } .part:nth-child(5) { --cd: .6s; }
+  .docx.cut .part + .part::before { transform: scaleX(1); }
+  .docx.split { gap: 7px; padding: 0; background: transparent; border-color: transparent; }
+  .docx.split .dn { opacity: 0; height: 0; padding: 0; overflow: hidden; }
+  .docx.split .part { border-color: color-mix(in srgb, var(--c-docs) 70%, var(--rule)); background: color-mix(in srgb, var(--c-docs) 10%, var(--card)); }
+  .docx.split .part::before { opacity: 0; }
+  .ck { border: 1.5px solid color-mix(in srgb, var(--p-rag) 65%, var(--rule)); border-radius: 7px; padding: 4px 9px; background: color-mix(in srgb, var(--p-rag) 8%, var(--card)); font-family: var(--font-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ck b { font-family: var(--font-ui); }
+  .big-n { font-size: 2.2em; font-weight: 700; color: var(--p-rag); line-height: 1; }
+
+  /* stage 3-4: facts */
+  .more3 { display: grid; gap: 5px; }
+  .more3 .from { font-size: .82em; color: var(--ink-3); font-weight: 700; }
+  .stay { color: var(--p-rag); font-family: var(--font-text); border-left: 3px solid var(--p-rag); padding-left: 8px; }
+  .fact.dup { border-color: var(--c-danger); border-style: dashed; }
+  .fact.dup .who { color: var(--c-danger); font-weight: 700; }
+  .fact .was { position: relative; }
+  .fact .was s { color: var(--c-danger); text-decoration-thickness: 2px; }
+  .fact .now { color: var(--p-kag); font-weight: 700; }
+  .fact.fixed { border-color: var(--p-kag); }
+  .fact.added { border-color: var(--p-kag); background: color-mix(in srgb, var(--p-kag) 8%, var(--card)); }
+  .col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+
+  /* the knowledge graph (drawn by the script) */
+  .kgwrap { min-height: 0; border: 1.5px solid var(--rule); border-radius: 10px; background: color-mix(in srgb, var(--paper) 45%, transparent); padding: 4px; display: flex; }
+  .kg { flex: 1; min-height: 0; width: 100%; font-family: var(--font-ui); }
+  .kg .e { stroke: var(--frame); stroke-width: 2.4; stroke-dasharray: 1; stroke-dashoffset: 1; }
+  .kg .e.on { stroke-dashoffset: 0; transition: stroke-dashoffset .8s var(--ease) calc(var(--i, 0) * 110ms), opacity .3s; }
+  .kg .el { font-size: 10.5px; font-weight: 700; fill: var(--p-kag); }
+  .kg .node { transform-box: fill-box; transform-origin: center; }
+  .kg .node circle { fill: var(--card); stroke: var(--tc); stroke-width: 3; }
+  .kg .node .nm { font-size: 12px; font-weight: 700; fill: var(--ink); }
+  .kg .node .tp { font-size: 9.5px; font-weight: 700; fill: var(--tc); }
+  .kg .chip rect { fill: color-mix(in srgb, var(--c-docs) 14%, var(--card)); stroke: color-mix(in srgb, var(--c-docs) 70%, var(--rule)); stroke-width: 1.2; }
+  .kg .chip text { font-size: 9.5px; font-weight: 700; fill: var(--ink-2); }
+  .kg .chip line { stroke: var(--ink-3); stroke-width: 1.2; stroke-dasharray: 3 3; }
+  .kg .chip.hot rect { stroke: var(--p-rag); stroke-width: 2.5; fill: color-mix(in srgb, var(--p-rag) 28%, var(--card)); }
+  .kg .hl { stroke: var(--c-question); stroke-width: 7; stroke-linecap: round; opacity: .8; }
+  .kg .ghost { stroke: var(--c-danger); stroke-width: 2.4; stroke-dasharray: 6 5; }
+  .kg .ghost-l { font-size: 10.5px; font-weight: 700; fill: var(--c-danger); }
+  .kg .fromtext { stroke: var(--p-rag); stroke-width: 3.2; stroke-dasharray: 7 4; }
+  .kg .fromtext-l { font-size: 10.5px; font-weight: 700; fill: var(--p-rag); }
+  .kg .ring { fill: none; stroke: var(--c-question); stroke-width: 3.5; }
+  .kg .walker { fill: var(--c-question); stroke: var(--card); stroke-width: 2.5; transition: cx .9s var(--ease), cy .9s var(--ease); }
+  .kg [data-s].ghost-x { transform: none; }
+
+  /* question, plan, answer */
+  .bubble-q { justify-self: start; max-width: 100%; background: var(--ink); color: var(--card); border-radius: 12px; padding: 8px 12px; font-family: var(--font-text); font-size: 1.05em; }
+  .bubble-q small { display: block; font-family: var(--font-ui); opacity: .7; font-size: .8em; }
+  .who-card { display: flex; align-items: center; gap: 12px; }
+  .who-card svg { width: 46px; height: 46px; }
+  .lf { display: grid; gap: 3px; font-family: var(--font-ui); font-size: .95em; }
+  .lf div { padding: 3px 8px; border-radius: 6px; background: color-mix(in srgb, var(--l3) 10%, var(--card)); border: 1.5px solid color-mix(in srgb, var(--l3) 50%, var(--rule)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lf i { font-style: normal; color: var(--l3); font-weight: 700; margin-right: 4px; }
+  .plan { display: grid; gap: 5px; }
+  .ps { display: grid; grid-template-columns: 22px minmax(0, 1fr); column-gap: 8px; row-gap: 2px; align-items: center; padding: 5px 9px; border: 1.5px solid var(--rule); border-radius: 8px; background: var(--card); opacity: .55; }
+  .ps.now { opacity: 1; border-color: var(--l3); box-shadow: 0 0 0 3px color-mix(in srgb, var(--l3) 20%, transparent); }
+  .ps.done { opacity: 1; }
+  .ps > i { grid-row: span 2; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-style: normal; font-weight: 700; font-size: .82em; background: var(--l3); color: var(--on-color); }
+  .ps .op { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ps .op em { font-style: normal; color: var(--l3); font-weight: 700; }
+  .ps .res { font-weight: 700; color: var(--c-question); }
+  .ps .res.fb { color: var(--p-rag); }
+  .why { display: grid; gap: 5px; }
+  .why div { padding: 4px 9px; border-left: 4px solid var(--p-kag); background: var(--card); border-radius: 0 7px 7px 0; }
+  .why div.so { border-left-color: var(--c-question); font-weight: 700; }
+  .reply { border: 1.5px solid var(--c-question); border-radius: 12px; padding: 8px 12px; background: color-mix(in srgb, var(--c-question) 8%, var(--card)); font-family: var(--font-text); font-size: 1.02em; }
+  .reply .path { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; margin-top: 6px; font-family: var(--font-ui); font-size: .86em; }
+  .reply .path span { border: 1.5px solid var(--p-kag); border-radius: 999px; padding: 0 8px; }
+  .reply .path i { font-style: normal; color: var(--ink-3); }
+  .reply .src { font-family: var(--font-ui); font-size: .8em; color: var(--ink-3); margin-top: 4px; }
+  .stored { display: grid; gap: 6px; align-content: start; }
+  .stored div { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 8px; align-items: start; }
+  .stored div > i { width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; font-style: normal; font-weight: 700; font-size: .8em; color: var(--on-color); background: var(--p-kag); }
+  .stored b { display: block; }
+  .stored span { font-family: var(--font-text); color: var(--ink-2); }
+  .kg [data-s].on { transition-delay: calc(var(--i, 0) * 110ms); }
+</style>
+</head>
+<body data-prev="07-rag-limits.html" data-next="09-graphrag.html" data-topic="08">
+<div class="deck">
+  <header class="topbar">
+    <span class="sec">08</span>
+    <span class="name">KAG</span>
+    <span class="spacer"></span>
+    <a href="index.html">Agenda</a>
+  </header>
+
+  <main class="layout tl">
+    <aside class="tl-col">
+      <div class="tl-head">
+        <h1>KAG</h1>
+        <p class="sub">Build a graph of facts once, then answer by following it.</p>
+      </div>
+      <ol id="timeline" class="timeline"></ol>
+    </aside>
+
+    <section class="stage" aria-label="Animation" id="stage">
+      <div class="fl-board">
+        <div class="fl-top"><span class="phase" id="phase">KAG</span><span class="spacer"></span></div>
+
+        <!-- ================= the diagrams ================= -->
+        <div class="fl-diags">
+          <div class="fdiag build" id="d-build">
+            <svg class="fl-links" aria-hidden="true"></svg>
+            <div class="fnode" id="n-schema" data-from="1" data-cur="1" style="--nc:var(--c-system)">
+              <span class="fi"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M3 20c0-3.5 3-6 6-6s6 2.5 6 6"/><path d="M14.5 14.5c2.6-.6 6.5.8 6.5 5"/></svg></span>
+              <div><b>Schema</b><small>domain experts</small></div><span class="out">schema</span></div>
+            <div class="fnode" id="n-gather" data-from="1" data-cur="1" style="--nc:var(--c-docs)">
+              <span class="fi"><svg viewBox="0 0 24 24"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4"/><path d="M4 7v14h11"/></svg></span>
+              <div><b>Gather</b><small>the knowledge</small></div><span class="out">4 documents</span></div>
+            <div class="fnode" id="n-chunk" data-from="2" data-cur="2" style="--nc:var(--p-rag)">
+              <span class="fi"><svg viewBox="0 0 24 24"><circle cx="6" cy="7" r="2.5"/><circle cx="6" cy="17" r="2.5"/><path d="M8 8.5 20 18M8 15.5 20 6"/></svg></span>
+              <div><b>Chunk</b><small>split the text</small></div><span class="out">52 chunks</span></div>
+            <div class="fnode" id="n-extract" data-from="3" data-cur="3" style="--nc:var(--l3)">
+              <span class="fi"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8" cy="9" r="1.5"/><circle cx="8" cy="15" r="1.5"/><circle cx="16" cy="12" r="1.5"/><path d="M9.5 9.5l5 2M9.5 14.5l5-2"/></svg></span>
+              <div><b>Extract</b><small>LLM + schema</small></div><span class="out">raw facts</span></div>
+            <div class="fnode" id="n-align" data-from="4" data-cur="4" style="--nc:var(--p-kag)">
+              <span class="fi"><svg viewBox="0 0 24 24"><path d="M3 6h5l6 6h6M3 18h5l6-6"/><path d="M17 9l3 3-3 3"/></svg></span>
+              <div><b>Align</b><small>merge and type</small></div><span class="out">aligned facts</span></div>
+            <div class="fnode" id="n-store" data-from="5" data-cur="5" style="--nc:var(--p-kag)">
+              <span class="fi"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="8" r="2.5"/><circle cx="10" cy="18" r="2.5"/><path d="M8.3 7l7.4.9M7 8.3l2.2 7.4M16.6 10.1l-5 6"/></svg></span>
+              <div><b>Store</b><small>graph + links to text</small></div><span class="out">knowledge graph</span></div>
+          </div>
+
+          <div class="fdiag ask" id="d-ask">
+            <svg class="fl-links" aria-hidden="true"></svg>
+            <div class="fnode summary" id="n-built" data-from="6" data-cur="6" style="--nc:var(--p-kag)">
+              <span class="fi"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="8" r="2.5"/><circle cx="10" cy="18" r="2.5"/><path d="M8.3 7l7.4.9M7 8.3l2.2 7.4M16.6 10.1l-5 6"/></svg></span>
+              <div><b>Built ahead of time</b><small>schema · chunk · extract · align · store</small></div><span class="out">graph + chunks</span></div>
+            <div class="fnode" id="n-q" data-from="7" data-cur="7" style="--nc:var(--c-question)">
+              <span class="fi"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H10l-5 4v-4H4z"/><path d="M10.5 8.6a1.8 1.8 0 1 1 2.4 1.7c-.6.3-.9.7-.9 1.3"/><circle cx="12" cy="13.6" r=".5"/></svg></span>
+              <div><b>Question</b><small>from Omar</small></div><span class="out">question</span></div>
+            <div class="fnode" id="n-plan" data-from="8" data-cur="8" style="--nc:var(--l3)">
+              <span class="fi"><svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="5" cy="6" r="1.3"/><circle cx="5" cy="12" r="1.3"/><circle cx="5" cy="18" r="1.3"/></svg></span>
+              <div><b>Plan</b><small>LLM, logical form</small></div><span class="out">4-step plan</span></div>
+            <div class="fnode" id="n-look" data-from="9" data-cur="9" style="--nc:var(--p-kag)">
+              <span class="fi"><svg viewBox="0 0 24 24"><circle cx="10" cy="10" r="6"/><path d="M14.5 14.5 20 20"/><circle cx="8" cy="9" r="1.3"/><circle cx="12" cy="11" r="1.3"/></svg></span>
+              <div><b>Follow edges</b><small>graph lookups</small></div><span class="out">Sara Ahmed</span></div>
+            <div class="fnode" id="n-fall" data-from="10" data-cur="10" style="--nc:var(--p-rag)">
+              <span class="fi"><svg viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M9 11h6M9 15h4"/></svg></span>
+              <div><b>Read the text</b><small>when an edge is missing</small></div><span class="out">line manager</span></div>
+            <div class="fnode" id="n-ded" data-from="11" data-cur="11" style="--nc:var(--c-system)">
+              <span class="fi"><svg viewBox="0 0 24 24"><circle cx="12" cy="6" r="1.8"/><circle cx="6.5" cy="17" r="1.8"/><circle cx="17.5" cy="17" r="1.8"/></svg></span>
+              <div><b>Deduce</b><small>combine the facts</small></div><span class="out">Sara approves</span></div>
+            <div class="fnode" id="n-ans" data-from="12" data-cur="12" style="--nc:var(--c-response)">
+              <span class="fi"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H10l-5 4v-4H4z"/><path d="M8.5 10.5l2.5 2.5 5-5"/></svg></span>
+              <div><b>Answer</b><small>LLM, with sources</small></div><span class="out">answer + path</span></div>
+          </div>
+        </div>
+
+        <!-- ================= the big output panel ================= -->
+        <div class="fpanel">
+
+          <!-- 0 -->
+          <div class="fstage" data-show="0">
+            <div class="fs-head"><span class="tag">KAG</span><h2>Two flows: build once, then ask</h2><p>Each stage hands its output to the next one.</p></div>
+            <div class="fs-body lanes">
+              <div class="lane"><b>Build<small>once, ahead of time</small></b>
+                <div class="row"><span class="chip" style="--cc:var(--c-system)" data-s="a">Schema</span><span class="chip" style="--cc:var(--c-docs)" data-s="a">Documents</span><i data-s="b">→</i><span class="chip" style="--cc:var(--p-rag)" data-s="b">Chunks</span><i data-s="c">→</i><span class="chip" style="--cc:var(--l3)" data-s="c">Facts</span><i data-s="d">→</i><span class="chip" style="--cc:var(--p-kag)" data-s="d">Aligned facts</span><i data-s="e">→</i><span class="chip" style="--cc:var(--p-kag)" data-s="e">Graph</span></div></div>
+              <div class="lane"><b>Ask<small>on every question</small></b>
+                <div class="row"><span class="chip" style="--cc:var(--c-question)" data-s="f">Question</span><i data-s="g">→</i><span class="chip" style="--cc:var(--l3)" data-s="g">Plan</span><i data-s="h">→</i><span class="chip" style="--cc:var(--p-kag)" data-s="h">Follow edges</span><i data-s="i">→</i><span class="chip" style="--cc:var(--p-rag)" data-s="i">Read the text</span><i data-s="j">→</i><span class="chip" style="--cc:var(--c-system)" data-s="j">Deduce</span><i data-s="k">→</i><span class="chip" style="--cc:var(--c-response)" data-s="k">Answer</span></div></div>
+            </div>
+          </div>
+
+          <!-- 1: schema and documents -->
+          <div class="fstage" data-show="1" style="--sc:var(--c-system)">
+            <div class="fs-head"><span class="tag">Build · stage 1</span><h2>Decide the schema, gather the knowledge</h2><p>Two things happen in parallel.</p></div>
+            <div class="fs-body two">
+              <div class="card">
+                <h3>The schema <small>written by domain experts</small></h3>
+                <div class="experts" data-s="e0"><svg viewBox="0 0 44 32"><circle cx="12" cy="9" r="5"/><path d="M3 30c0-6 4-10 9-10s9 4 9 10"/><circle cx="31" cy="10" r="4.5"/><path d="M24 30c0-5 3-9 7-9s8 4 8 9"/></svg><span>HR and the policy owners decide what the graph may contain.</span></div>
+                <div class="lab" data-s="e0">Types of things</div>
+                <div class="chips">
+                  <span class="chip t-person" style="--cc:var(--tc)" data-s="t1">Person</span>
+                  <span class="chip t-team" style="--cc:var(--tc)" data-s="t2">Team</span>
+                  <span class="chip t-role" style="--cc:var(--tc)" data-s="t3">Role</span>
+                  <span class="chip t-rule" style="--cc:var(--tc)" data-s="t4">Leave rule</span>
+                  <span class="chip t-policy" style="--cc:var(--tc)" data-s="t5">Policy</span>
+                </div>
+                <div class="lab" data-s="r0">Relations allowed between them</div>
+                <div class="rels">
+                  <div data-s="r1">Person <span class="r">works in</span> Team</div>
+                  <div data-s="r2">Team <span class="r">managed by</span> Person</div>
+                  <div data-s="r3">Person <span class="r">holds</span> Role</div>
+                  <div data-s="r4">Role <span class="r">is a</span> Role</div>
+                  <div data-s="r5">Leave rule <span class="r">part of</span> Policy</div>
+                </div>
+              </div>
+              <div class="card">
+                <h3>The knowledge <small>collected from where it lives</small></h3>
+                <div class="doc" data-s="d1"><span class="ft">XLSX</span><b>Staff list</b><span>Omar Khalid · Sales team · since 2023</span></div>
+                <div class="doc" data-s="d2"><span class="ft">PDF</span><b>Org chart</b><span>Sales team · managed by S. Ahmed</span></div>
+                <div class="doc" data-s="d3"><span class="ft">XLSX</span><b>HR directory</b><span>Sara Ahmed · Head of Sales</span></div>
+                <div class="doc" data-s="d4"><span class="ft">PDF</span><b>Leave policy</b><span>§4 Carried-over days need the line manager's approval</span></div>
+                <div class="note" data-s="d5">No single document answers "who approves Omar's carry-over?"</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 2: chunk -->
+          <div class="fstage" data-show="2" style="--sc:var(--p-rag)">
+            <div class="fs-head"><span class="tag">Build · stage 2</span><h2>Chunk the documents</h2><p>As in RAG. The chunks are kept: every fact will point back to one.</p></div>
+            <div class="fs-body two">
+              <div class="col">
+                <div class="lab">The leave policy, cut where its sections change</div>
+                <div class="docx" id="docx" data-s="x0">
+                  <div class="dn">Leave policy</div>
+                  <div class="part"><b>3. Annual leave</b> 25 days a year; pro rata for part-time staff.</div>
+                  <div class="part"><b>4. Carry-over</b> Up to 5 days. Carried-over days need the line manager's approval.</div>
+                  <div class="part"><b>5. Sick leave</b> Report on the first day.</div>
+                  <div class="part"><b>6. Forms</b> Use form HR-17, signed by the HR director.</div>
+                </div>
+              </div>
+              <div class="col">
+                <div class="lab" data-s="c0">One chunk from each document</div>
+                <div class="ck" data-s="c1"><b>Staff list</b> Omar Khalid joined the Sales team in March 2023.</div>
+                <div class="ck" data-s="c2"><b>Org chart</b> Sales team: managed by S. Ahmed.</div>
+                <div class="ck" data-s="c3"><b>HR directory</b> Sara Ahmed, Head of Sales.</div>
+                <div class="ck" data-s="c4"><b>Leave policy §4</b> Carried-over days need the line manager's approval.</div>
+                <div data-s="c5"><span class="big-n num">52</span> <span class="note">chunks in all</span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 3: extract -->
+          <div class="fstage" data-show="3" style="--sc:var(--l3)">
+            <div class="fs-head"><span class="tag">Build · stage 3</span><h2>Send each chunk, with the schema, to the LLM</h2><p>The LLM writes down the facts it finds, in the schema's shape.</p></div>
+            <div class="fs-body" style="grid-template-rows:auto auto">
+              <div class="xchg">
+                <div class="side">
+                  <div class="lab" data-s="s0">Sent</div>
+                  <div class="sent" data-s="s1"><b>Instruction</b> Extract the entities and relations in this text. Use only these types: Person, Team, Role, Leave rule, Policy. Use only these relations: works in, managed by, holds, is a, part of.</div>
+                  <div class="sent" data-s="s2"><b>Chunk</b> "Omar Khalid joined the Sales team in March 2023."</div>
+                </div>
+                <div class="llm" id="llm3" data-s="s1"></div>
+                <div class="side">
+                  <div class="lab" data-s="b0">Returned</div>
+                  <div class="back" data-s="b1">Omar Khalid <span class="ty t-person">Person</span></div>
+                  <div class="back" data-s="b2">Sales team <span class="ty t-team">Team</span></div>
+                  <div class="fact" data-s="b3"><span>Omar Khalid</span><span class="rel">works in</span><span>Sales team</span></div>
+                </div>
+              </div>
+              <div class="more3">
+                <div class="lab" data-s="m0">The same prompt for every chunk</div>
+                <div class="fact" data-s="m1"><span>Sales team</span><span class="rel">managed by</span><span>S. Ahmed</span></div>
+                <div class="fact" data-s="m2"><span>Sara Ahmed</span><span class="rel">holds</span><span>Head of Sales</span></div>
+                <div class="fact" data-s="m3"><span>Carry-over</span><span class="rel">part of</span><span>Leave policy</span></div>
+                <div class="stay" data-s="m4">"Needs the line manager's approval" is a condition, not a link between two things. It stays in the text.</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 4: align -->
+          <div class="fstage" data-show="4" style="--sc:var(--p-kag)">
+            <div class="fs-head"><span class="tag">Build · stage 4</span><h2>Align: merge duplicates, link to concepts</h2><p>Raw facts are messy. Alignment makes them one consistent graph.</p></div>
+            <div class="fs-body two">
+              <div class="col">
+                <div class="lab">The raw facts</div>
+                <div class="fact"><span>Omar Khalid</span><span class="rel">works in</span><span>Sales team</span></div>
+                <div class="fact dup" id="dupfact"><span>Sales team</span><span class="rel">managed by</span><span class="was"><s class="who">S. Ahmed</s> <span class="now" data-s="m">Sara Ahmed</span></span></div>
+                <div class="fact dup" id="dupfact2"><span class="who">Sara Ahmed</span><span class="rel">holds</span><span>Head of Sales</span></div>
+                <div class="fact"><span>Carry-over</span><span class="rel">part of</span><span>Leave policy</span></div>
+                <div class="fact added" data-s="k"><span>Head of Sales</span><span class="rel">is a</span><span>Line manager</span></div>
+              </div>
+              <div class="col">
+                <div class="xchg">
+                  <div class="side"><div class="sent" data-s="q1"><b>Same entity?</b> "S. Ahmed" (manages the Sales team) and "Sara Ahmed" (Head of Sales)</div></div>
+                  <div class="llm" id="llm4a" data-s="q1"></div>
+                  <div class="side"><div class="back" data-s="a1"><b>Yes.</b> Same team, same role: merge.</div></div>
+                </div>
+                <div class="xchg">
+                  <div class="side"><div class="sent" data-s="q2"><b>Which concept?</b> Is "Head of Sales" a kind of any Role in the schema?</div></div>
+                  <div class="llm" id="llm4b" data-s="q2"></div>
+                  <div class="side"><div class="back" data-s="a2"><b>Yes.</b> Head of Sales is a Line manager.</div></div>
+                </div>
+                <div class="note" data-s="k">Candidates come from similar names and meanings; the LLM confirms.</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 5: store -->
+          <div class="fstage" data-show="5" style="--sc:var(--p-kag)">
+            <div class="fs-head"><span class="tag">Build · stage 5</span><h2>Store the graph, linked to its text</h2><p>KAG calls this mutual indexing: each node knows its chunks, each chunk its nodes.</p></div>
+            <div class="fs-body" style="grid-template-columns:minmax(0,1.6fr) minmax(0,1fr)">
+              <div class="kgwrap" data-kg="build"></div>
+              <div class="stored">
+                <div data-s="s1"><i>1</i><p style="margin:0"><b>Nodes with types</b><span>Each fact's two ends become nodes: a Person, a Team, a Role.</span></p></div>
+                <div data-s="s2"><i>2</i><p style="margin:0"><b>Edges</b><span>Each fact's relation becomes an edge between them.</span></p></div>
+                <div data-s="s3"><i>3</i><p style="margin:0"><b>Links to the text</b><span>Dashed tags: the chunk each node came from.</span></p></div>
+                <div data-s="s4"><i>4</i><p style="margin:0"><b>Searchable chunks</b><span>Indexed by words and meaning, as in RAG, for when the graph has a gap.</span></p></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 6: built -->
+          <div class="fstage" data-show="6" style="--sc:var(--p-kag)">
+            <div class="fs-head"><span class="tag">Built</span><h2>The graph is ready</h2><p>Built once, ahead of time. A changed document is extracted and aligned again.</p></div>
+            <div class="fs-body" style="grid-template-columns:minmax(0,1.6fr) minmax(0,1fr)">
+              <div class="kgwrap" data-kg="all"></div>
+              <div class="stored">
+                <div data-s="s1"><i>✓</i><p style="margin:0"><b>Facts, not passages</b><span>Who works where, who manages whom, which role is which.</span></p></div>
+                <div data-s="s2"><i>✓</i><p style="margin:0"><b>Each with its source</b><span>So answers can cite the document behind every step.</span></p></div>
+                <div data-s="s3"><i>→</i><p style="margin:0"><b>Now, a question</b><span>The build pipeline folds into one box: the graph it produced.</span></p></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 7: question -->
+          <div class="fstage" data-show="7" style="--sc:var(--c-question)">
+            <div class="fs-head"><span class="tag">Ask · stage 1</span><h2>A question arrives</h2><p>The app also knows who is asking.</p></div>
+            <div class="fs-body two" style="align-content:center">
+              <div class="col" style="justify-content:center"><div class="bubble-q" data-s="a"><small>Omar Khalid, signed in</small>Who approves my carry-over request?</div></div>
+              <div class="col" style="justify-content:center">
+                <div class="who-card" data-s="b"><svg viewBox="0 0 46 46"><circle cx="23" cy="23" r="15" fill="var(--card)" stroke="var(--c-history)" stroke-width="4"/><circle cx="23" cy="23" r="21" fill="none" stroke="var(--c-question)" stroke-width="2.5" stroke-dasharray="5 4"/></svg>
+                  <div><b>"my" = Omar Khalid</b><div class="note">A node in the graph: the starting point.</div></div></div>
+                <div class="note" data-s="c">Plain RAG would search for text that looks like the question. KAG first works out what to look up.</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 8: plan -->
+          <div class="fstage" data-show="8" style="--sc:var(--l3)">
+            <div class="fs-head"><span class="tag">Ask · stage 2</span><h2>The LLM turns the question into a plan</h2><p>Small steps, each one an operation the app can run.</p></div>
+            <div class="fs-body" style="grid-template-rows:auto auto;align-content:center">
+              <div class="xchg">
+                <div class="side">
+                  <div class="lab" data-s="s0">Sent</div>
+                  <div class="sent" data-s="s1"><b>Question</b> Who approves my carry-over request? <b>Asked by</b> Omar Khalid</div>
+                  <div class="sent" data-s="s2"><b>Operators</b> Retrieval, Sort, Math, Deduce, Output <b>Schema</b> types and relations</div>
+                </div>
+                <div class="llm" id="llm8" data-s="s1"></div>
+                <div class="side">
+                  <div class="lab" data-s="b0">Returned: a plan in logical form</div>
+                  <div class="lf">
+                    <div data-s="l1"><i>1</i>Retrieval(Omar Khalid, works in, ?team)</div>
+                    <div data-s="l2"><i>2</i>Retrieval(?team, managed by, ?manager)</div>
+                    <div data-s="l3"><i>3</i>Retrieval(Carry-over, approved by, ?role)</div>
+                    <div data-s="l4"><i>4</i>Deduce(?manager is a ?role) → Output(?manager)</div>
+                  </div>
+                </div>
+              </div>
+              <div class="note" data-s="n">Retrieval, Sort, Math and Deduce let KAG answer "who", "how many" and "the most", which similarity search can't.</div>
+            </div>
+          </div>
+
+          <!-- 9: follow edges -->
+          <div class="fstage" data-show="9" style="--sc:var(--p-kag)">
+            <div class="fs-head"><span class="tag">Ask · stage 3</span><h2>Run the plan: follow the edges</h2><p>Steps 1 and 2 are lookups in the graph. Nothing is guessed.</p></div>
+            <div class="fs-body" style="grid-template-columns:minmax(0,1fr) minmax(0,1.35fr)">
+              <div class="col"><div class="plan" data-plan="9"></div>
+                <div class="nollm" data-s="n"><b>No LLM here.</b> A graph lookup, like a database query.</div></div>
+              <div class="kgwrap" data-kg="walk"></div>
+            </div>
+          </div>
+
+          <!-- 10: fallback -->
+          <div class="fstage" data-show="10" style="--sc:var(--p-rag)">
+            <div class="fs-head"><span class="tag">Ask · stage 4</span><h2>A missing edge? Read the linked text</h2><p>The graph has no "approved by". Carry-over points to its chunk.</p></div>
+            <div class="fs-body" style="grid-template-columns:minmax(0,1fr) minmax(0,1.35fr)">
+              <div class="col"><div class="plan" data-plan="10"></div>
+                <div class="sent" data-s="s1"><b>Sent to the LLM</b> Who approves carry-over? <b>Leave policy §4</b> "Carried-over days need the line manager's approval."</div>
+                <div class="back" data-s="s2"><b>Returned</b> The line manager.</div></div>
+              <div class="kgwrap" data-kg="fallback"></div>
+            </div>
+          </div>
+
+          <!-- 11: deduce -->
+          <div class="fstage" data-show="11" style="--sc:var(--c-system)">
+            <div class="fs-head"><span class="tag">Ask · stage 5</span><h2>Deduce: put the facts together</h2><p>Step 4 of the plan connects the two halves.</p></div>
+            <div class="fs-body" style="grid-template-columns:minmax(0,1fr) minmax(0,1.35fr)">
+              <div class="col"><div class="plan" data-plan="11"></div>
+                <div class="why">
+                  <div data-s="w1">Sara Ahmed holds Head of Sales.</div>
+                  <div data-s="w2">Head of Sales is a Line manager.</div>
+                  <div data-s="w3">Carry-over is approved by the Line manager.</div>
+                  <div class="so" data-s="w4">So Sara Ahmed approves Omar's carry-over.</div>
+                </div></div>
+              <div class="kgwrap" data-kg="deduce"></div>
+            </div>
+          </div>
+
+          <!-- 12: answer -->
+          <div class="fstage" data-show="12" style="--sc:var(--c-response)">
+            <div class="fs-head"><span class="tag">Ask · stage 6</span><h2>The LLM writes the answer, with the path</h2><p>Every step carries its source document.</p></div>
+            <div class="fs-body" style="grid-template-rows:auto auto;align-content:center">
+              <div class="xchg">
+                <div class="side"><div class="sent" data-s="s1"><b>Facts</b> Omar works in Sales team; Sales team managed by Sara Ahmed; Sara holds Head of Sales, a Line manager; carry-over needs the line manager. <b>Question</b> Who approves my carry-over request?</div></div>
+                <div class="llm" id="llm12" data-s="s1"></div>
+                <div class="side"><div class="back" data-s="s2"><b>Returned</b> Sara Ahmed, your line manager, approves it.</div></div>
+              </div>
+              <div class="reply" data-s="r"><b>Sara Ahmed</b>, your line manager, approves your carry-over request.
+                <div class="path"><span>You</span><i>→ works in</i><span>Sales team</span><i>→ managed by</i><span>Sara Ahmed</span><i>· Line manager</i></div>
+                <div class="src">Sources: Staff list · Org chart · HR directory · Leave policy §4</div></div>
+            </div>
+          </div>
+
+          <!-- 13: next -->
+          <div class="fstage" data-show="13" style="--sc:var(--c-history)">
+            <div class="fs-head"><span class="tag">KAG</span><h2>KAG in two lines</h2><p>Next: GraphRAG, built for a different kind of question.</p></div>
+            <div class="fs-body lanes">
+              <div class="lane" data-s="a"><b>Build</b><div class="note" style="font-size:1.1em">An LLM extracts facts in the shape of a schema; they are aligned and linked to their text.</div></div>
+              <div class="lane" data-s="b"><b>Ask</b><div class="note" style="font-size:1.1em">An LLM writes a plan; the app follows edges, reads text where an edge is missing, deduces, and answers with the path.</div></div>
+              <div class="lane" data-s="c"><b>Next</b><div class="note" style="font-size:1.1em">GraphRAG: not "who approves this?", but "what are the main themes across everything?"</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script src="assets/session.js?v=8"></script>
+<script src="assets/deck.js?v=6"></script>
+<script src="assets/flow.js?v=2"></script>
+<script src="assets/flowline.js?v=2"></script>
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const T = Deck.timeline();
+  const stage = $("stage");
+
+  /* ---------- drawings ---------- */
+  const LLM = `<svg viewBox="0 0 64 64"><rect class="bx" x="4" y="4" width="56" height="56" rx="12"/>
+    <line class="ln" x1="16" y1="20" x2="28" y2="15"/><line class="ln" x1="16" y1="20" x2="28" y2="32"/><line class="ln" x1="16" y1="44" x2="28" y2="32"/><line class="ln" x1="16" y1="44" x2="28" y2="49"/>
+    <line class="ln" x1="28" y1="15" x2="40" y2="24"/><line class="ln" x1="28" y1="32" x2="40" y2="24"/><line class="ln" x1="28" y1="32" x2="40" y2="40"/><line class="ln" x1="28" y1="49" x2="40" y2="40"/>
+    <line class="ln" x1="40" y1="24" x2="50" y2="32"/><line class="ln" x1="40" y1="40" x2="50" y2="32"/>
+    <circle class="nd" cx="16" cy="20" r="4" style="--i:0"/><circle class="nd" cx="16" cy="44" r="4" style="--i:1"/><circle class="nd" cx="28" cy="15" r="4" style="--i:2"/><circle class="nd" cx="28" cy="32" r="4" style="--i:3"/><circle class="nd" cx="28" cy="49" r="4" style="--i:4"/><circle class="nd" cx="40" cy="24" r="4" style="--i:5"/><circle class="nd" cx="40" cy="40" r="4" style="--i:6"/><circle class="nd" cx="50" cy="32" r="4" style="--i:7"/></svg><span>LLM</span>`;
+  document.querySelectorAll(".llm").forEach((el) => (el.innerHTML = LLM));
+
+  // the knowledge graph: nodes, edges, links to text, and overlays for the asking stages
+  const N = {
+    O: [70, 62, "Omar Khalid", "Person", "t-person"], S: [250, 62, "Sales team", "Team", "t-team"], R: [430, 62, "Sara Ahmed", "Person", "t-person"],
+    H: [430, 192, "Head of Sales", "Role", "t-role"], L: [250, 192, "Line manager", "Role", "t-role"], C: [70, 192, "Carry-over", "Leave rule", "t-rule"],
+    P: [250, 282, "Leave policy", "Policy", "t-policy"],
+  };
+  const E = [["O", "S", "works in"], ["S", "R", "managed by"], ["R", "H", "holds"], ["H", "L", "is a"], ["C", "P", "part of"]];
+  const CHIP = { O: "Staff list", S: "Org chart", R: "HR directory", H: "HR directory", C: "Leave §4", P: "Leave §1" };
+  const line = (a, b, cls, s, i) => `<line class="${cls}" ${s ? `data-s="${s}"` : ""} style="--i:${i || 0}" pathLength="1" x1="${N[a][0]}" y1="${N[a][1]}" x2="${N[b][0]}" y2="${N[b][1]}"/>`;
+  function elabel(a, b, txt, cls = "el") {
+    const [x1, y1] = N[a], [x2, y2] = N[b];
+    if (x1 === x2) return `<text class="${cls}" x="${x1 + 9}" y="${(y1 + y2) / 2 + 4}">${txt}</text>`;
+    return `<text class="${cls}" x="${(x1 + x2) / 2}" y="${(y1 + y2) / 2 - 8}" text-anchor="middle">${txt}</text>`;
+  }
+  function chip(k, i) {
+    const [x, y] = N[k], t = CHIP[k], w = t.length * 5.6 + 14;
+    if (k === "P") return `<g class="chip" data-s="gc" style="--i:${i}"><line x1="${x + 10}" y1="${y}" x2="${x + 44}" y2="${y}"/><rect x="${x + 44}" y="${y - 8}" width="${w}" height="16" rx="3"/><text x="${x + 44 + w / 2}" y="${y + 4}" text-anchor="middle">${t}</text></g>`;
+    return `<g class="chip" data-s="gc" style="--i:${i}"><line x1="${x}" y1="${y + 31}" x2="${x}" y2="${y + 35}"/><rect x="${x - w / 2}" y="${y + 35}" width="${w}" height="16" rx="3"/><text x="${x}" y="${y + 47}" text-anchor="middle">${t}</text></g>`;
+  }
+  function kg(mode) {
+    let h = `<svg class="kg" viewBox="0 0 540 320" preserveAspectRatio="xMidYMid meet" aria-label="Knowledge graph">`;
+    E.forEach(([a, b], i) => (h += line(a, b, "e", "ge", i)));
+    if (mode === "walk") h += line("O", "S", "hl", "h1") + line("S", "R", "hl", "h2");
+    if (mode === "deduce") h += line("O", "S", "hl") + line("S", "R", "hl") + line("R", "H", "hl", "h3") + line("H", "L", "hl", "h4") + line("C", "L", "hl", "h5");
+    if (mode === "fallback") h += `<g data-s="gx">${line("C", "L", "ghost")}${elabel("C", "L", "approved by: missing", "ghost-l")}</g>`;
+    if (mode === "fallback" || mode === "deduce") h += `<g data-s="ft">${line("C", "L", "fromtext")}${elabel("C", "L", "approved by (§4)", "fromtext-l")}</g>`;
+    E.forEach(([a, b, t]) => (h += `<g data-s="ge">${elabel(a, b, t)}</g>`));
+    Object.keys(CHIP).forEach((k, i) => (h += chip(k, i)));
+    if (mode === "fallback") { const [x, y] = N.C, w = CHIP.C.length * 5.6 + 14; h += `<g class="chip hot" data-s="hc"><rect x="${x - w / 2}" y="${y + 35}" width="${w}" height="16" rx="3"/><text x="${x}" y="${y + 47}" text-anchor="middle">${CHIP.C}</text></g>`; }
+    Object.entries(N).forEach(([k, [x, y, nm, tp, cls]], i) => (h += `<g class="node ${cls}" data-s="gn" style="--i:${i}"><circle cx="${x}" cy="${y}" r="10"/><text class="nm" x="${x}" y="${y - 17}" text-anchor="middle">${nm}</text><text class="tp" x="${x}" y="${y + 27}" text-anchor="middle">${tp}</text></g>`));
+    if (mode === "walk") h += `<circle class="walker" id="walker" data-s="w" cx="${N.O[0]}" cy="${N.O[1]}" r="8"/>`;
+    if (mode === "deduce") h += `<circle class="ring" data-s="rg" cx="${N.R[0]}" cy="${N.R[1]}" r="17"/>`;
+    return h + `</svg>`;
+  }
+  document.querySelectorAll("[data-kg]").forEach((el) => (el.innerHTML = kg(el.dataset.kg)));
+
+  // the plan, as it stands at stages 9, 10 and 11
+  const STEPS = [
+    ["Retrieval", "Omar Khalid, works in, ?team", "Sales team", ""],
+    ["Retrieval", "?team, managed by, ?manager", "Sara Ahmed", ""],
+    ["Retrieval", "Carry-over, approved by, ?role", "not in the graph; §4 says: Line manager", "fb"],
+    ["Deduce", "?manager is a ?role → Output", "Sara Ahmed", ""],
+  ];
+  const NOW = { 9: [0, 1], 10: [2], 11: [3] };
+  document.querySelectorAll("[data-plan]").forEach((el) => {
+    const st = Number(el.dataset.plan);
+    el.innerHTML = STEPS.map(([op, args, res, cls], i) => {
+      const now = NOW[st].includes(i), done = i < NOW[st][0];
+      const r = now ? `<span class="res ${cls}" data-s="r${i + 1}">= ${res}</span>` : done ? `<span class="res ${cls}">= ${res}</span>` : "";
+      return `<div class="ps${now ? " now" : done ? " done" : ""}"><i>${i + 1}</i><span class="op"><em>${op}</em> ${args}</span>${r}</div>`;
+    }).join("");
+  });
+
+  /* ---------- the flow ---------- */
+  const F = FlowLine({
+    root: stage, timeline: T,
+    diagrams: [
+      { el: $("d-build"), links: [["n-schema", "n-extract"], ["n-gather", "n-chunk"], ["n-chunk", "n-extract"], ["n-extract", "n-align"], ["n-align", "n-store"]], show: (s) => s <= 6, folded: (s) => s >= 6 },
+      { el: $("d-ask"), links: [["n-q", "n-plan"], ["n-plan", "n-look"], ["n-built", "n-look"], ["n-look", "n-fall"], ["n-fall", "n-ded"], ["n-ded", "n-ans"]], show: (s) => s >= 6 },
+    ],
+  });
+  const busy = (id, t0, t1) => { F.at(t0, () => $(id).classList.add("busy")); F.at(t1, () => $(id).classList.remove("busy")); };
+  const BASE = "ge gn gc";
+
+  const PLAY = {
+    0() { "a b c d e f g h i j k".split(" ").forEach((n, i) => F.show(n, 200 + i * 260)); },
+    1() {
+      F.work("n-schema", 0, 3000); F.work("n-gather", 0, 3000);
+      F.show("e0", 200); ["t1", "t2", "t3", "t4", "t5"].forEach((n, i) => F.show(n, 600 + i * 220));
+      F.show("r0", 1700); ["r1", "r2", "r3", "r4", "r5"].forEach((n, i) => F.show(n, 1900 + i * 260));
+      ["d1", "d2", "d3", "d4"].forEach((n, i) => F.show(n, 400 + i * 450)); F.show("d5", 2600);
+      F.out("n-schema", 3300); F.out("n-gather", 3300);
+    },
+    2() {
+      F.fly("n-gather", "n-chunk", "4 documents", 0, "doc");
+      F.work("n-chunk", 700, 3200);
+      F.at(0, () => $("docx").classList.remove("cut", "split"));
+      F.show("x0", 600);
+      F.at(1300, () => $("docx").classList.add("cut"));
+      F.at(2100, () => $("docx").classList.add("split"));
+      F.show("c0", 2500); ["c1", "c2", "c3", "c4", "c5"].forEach((n, i) => F.show(n, 2700 + i * 220));
+      F.out("n-chunk", 3900);
+    },
+    3() {
+      F.fly("n-chunk", "n-extract", "chunks", 0, "doc"); F.fly("n-schema", "n-extract", "schema", 150, "sys");
+      F.show("s0 s1", 700); F.show("s2", 1100);
+      F.work("n-extract", 1500, 4800); busy("llm3", 1500, 2700);
+      F.show("b0 b1", 2700); F.show("b2", 3000); F.show("b3", 3400);
+      F.show("m0", 4000); ["m1", "m2", "m3"].forEach((n, i) => F.show(n, 4300 + i * 350)); F.show("m4", 5500);
+      F.out("n-extract", 5800);
+    },
+    4() {
+      F.fly("n-extract", "n-align", "raw facts", 0, "fact");
+      F.work("n-align", 700, 5600);
+      F.show("q1", 700); busy("llm4a", 1100, 1900); F.show("a1", 1900);
+      F.at(2400, () => { $("dupfact").classList.replace("dup", "fixed"); $("dupfact2").classList.replace("dup", "fixed"); }); F.show("m", 2400);
+      F.show("q2", 3100); busy("llm4b", 3500, 4300); F.show("a2", 4300); F.show("k", 4800);
+      F.out("n-align", 5600);
+    },
+    5() {
+      F.fly("n-align", "n-store", "aligned facts", 0, "fact");
+      F.work("n-store", 700, 4600);
+      F.show("s1", 700); F.show("gn", 900); F.show("s2", 1900); F.show("ge", 2100);
+      F.show("s3", 3100); F.show("gc", 3300); F.show("s4", 4200);
+      F.out("n-store", 4600);
+    },
+    6() { F.show(BASE, 0); F.show("s1", 400); F.show("s2", 900); F.show("s3", 1400); F.out("n-built", 1600); },
+    7() { F.work("n-q", 0, 2000); F.show("a", 300); F.show("b", 1200); F.show("c", 2200); F.out("n-q", 2600); },
+    8() {
+      F.fly("n-q", "n-plan", "question", 0, "q");
+      F.show("s0 s1", 600); F.show("s2", 900);
+      F.work("n-plan", 1300, 4200); busy("llm8", 1300, 2600);
+      F.show("b0", 2600); ["l1", "l2", "l3", "l4"].forEach((n, i) => F.show(n, 2800 + i * 380)); F.show("n", 4400);
+      F.out("n-plan", 4600);
+    },
+    9() {
+      F.fly("n-plan", "n-look", "plan", 0, "plan"); F.fly("n-built", "n-look", "graph", 150, "fact");
+      F.show(BASE, 0); F.show("n", 700);
+      F.work("n-look", 900, 4200);
+      F.show("w", 900);
+      F.at(1500, () => { const w = $("walker"); w.setAttribute("cx", N.S[0]); w.setAttribute("cy", N.S[1]); }); F.show("h1", 1500); F.show("r1", 2300);
+      F.at(2900, () => { const w = $("walker"); w.setAttribute("cx", N.R[0]); w.setAttribute("cy", N.R[1]); }); F.show("h2", 2900); F.show("r2", 3700);
+      F.out("n-look", 4300);
+    },
+    10() {
+      F.fly("n-look", "n-fall", "Sara Ahmed", 0, "fact");
+      F.show(BASE, 0); F.work("n-fall", 600, 4600);
+      F.show("gx", 700); F.show("hc", 1600);
+      F.show("s1", 2200); F.show("s2", 3300);
+      F.at(3700, () => document.querySelectorAll('.fstage.is-on [data-s="gx"]').forEach((g) => g.classList.remove("on")));
+      F.show("ft", 3700); F.show("r3", 4100);
+      F.out("n-fall", 4700);
+    },
+    11() {
+      F.fly("n-fall", "n-ded", "line manager", 0, "doc");
+      F.show(BASE + " ft", 0); F.work("n-ded", 600, 3700);
+      F.show("w1 h3", 700); F.show("w2 h4", 1400); F.show("w3 h5", 2100); F.show("w4 rg", 2900); F.show("r4", 3300);
+      F.out("n-ded", 3800);
+    },
+    12() {
+      F.fly("n-ded", "n-ans", "Sara approves", 0, "fact");
+      F.show("s1", 600); F.work("n-ans", 1000, 3600); busy("llm12", 1000, 2200);
+      F.show("s2", 2200); F.show("r", 3000);
+      F.out("n-ans", 3600);
+    },
+    13() { F.show("a", 300); F.show("b", 1000); F.show("c", 1700); },
+  };
+
+  function render(step, prev) {
+    const forward = prev === step - 1 && !Deck.reduced();
+    F.render(step, forward);
+    document.querySelectorAll(".llm").forEach((l) => l.classList.remove("busy"));
+    // stage 4's facts and stage 2's document: end state unless playing
+    $("docx").classList.toggle("cut", !forward || step !== 2);
+    $("docx").classList.toggle("split", !forward || step !== 2);
+    ["dupfact", "dupfact2"].forEach((id) => { const el = $(id); el.classList.remove("dup", "fixed"); el.classList.add(forward && step === 4 ? "dup" : "fixed"); });
+    const w = $("walker");
+    if (w) { const p = forward && step === 9 ? N.O : N.R; w.setAttribute("cx", p[0]); w.setAttribute("cy", p[1]); }
+    if (!forward && step === 10) document.querySelectorAll('.fstage.is-on [data-s="gx"]').forEach((g) => g.classList.remove("on"));
+    const ph = step === 0 ? ["KAG", "var(--p-kag)"] : step <= 5 ? ["Build: once, ahead of time", "var(--p-kag)"] : step === 6 ? ["Built", "var(--p-kag)"] : step <= 12 ? ["Ask: on every question", "var(--c-question)"] : ["Next: GraphRAG", "var(--c-history)"];
+    $("phase").textContent = ph[0];
+    $("phase").style.setProperty("--ph", ph[1]);
+    if (forward && PLAY[step]) PLAY[step]();
+  }
+
+  Deck.init({
+    render,
+    groupColors: { "Build": "var(--p-kag)", "Ask": "var(--c-question)", "Next": "var(--c-history)" },
+    steps: [
+      { title: "Build once, then ask", body: `<p>KAG has two flows. <strong>Build</strong> turns documents into a graph of facts, once. <strong>Ask</strong> answers each question by following that graph.</p>`,
+        notes: `<ul><li>KAG: "KAG: Boosting LLMs in Professional Domains via Knowledge Augmented Generation", Ant Group, arXiv 2409.13731; open source as OpenSPG/KAG.</li><li>Each stage plays, then pauses on its output. On Next, the output moves into the next stage and keeps a small tag on the diagram.</li></ul>` },
+      { group: "Build", title: "Schema and knowledge", body: `<p>Domain experts decide the <strong>schema</strong>: which types and relations the graph may hold. In parallel, the <strong>documents</strong> are gathered.</p>`,
+        notes: `<ul><li>The schema is what makes KAG precise, and what makes it expensive: people have to design it.</li><li>KAG also keeps freely extracted facts (no schema), which are cheaper but noisier.</li></ul>` },
+      { group: "Build", title: "Chunk", body: `<p>The documents are cut into <strong>chunks</strong>, as in RAG. They are kept, so every fact can point back to its text.</p>`,
+        notes: `<ul><li>KAG's builder uses semantic chunking. 52 chunks is an illustrative number.</li></ul>` },
+      { group: "Build", title: "Extract facts with the LLM", body: `<p>Each chunk goes to the LLM <strong>with the schema</strong>. The LLM returns the entities and relations it finds, in that shape.</p>`,
+        notes: `<ul><li>The key demystification: the graph is built by prompting an LLM, chunk by chunk.</li><li>Conditions and rules often stay as text; that matters later.</li></ul>` },
+      { group: "Build", title: "Align", body: `<p>Duplicates are <strong>merged</strong> (S. Ahmed is Sara Ahmed) and instances are linked to <strong>concepts</strong> (Head of Sales is a Line manager).</p>`,
+        notes: `<ul><li>The paper calls this knowledge alignment: disambiguation and merging, instance-to-concept links, relations like synonym, isA, isPartOf.</li><li>How candidates are found varies by implementation; the LLM judgement is the paper's approach.</li></ul>` },
+      { group: "Build", title: "Store, linked to the text", body: `<p>The aligned facts become <strong>nodes and edges</strong>. Each node keeps a link to its chunk: <strong>mutual indexing</strong>.</p>`,
+        notes: `<ul><li>The chunks are also indexed by keywords and vectors, for the text fallback when asking.</li></ul>` },
+      { group: "Build", title: "The graph is ready", body: `<p>The build flow folds into one box: <strong>the graph it produced</strong>. It feeds every question from now on.</p>`,
+        notes: `<ul><li>When a document changes, its facts are extracted and aligned again.</li></ul>` },
+      { group: "Ask", title: "A question arrives", body: `<p>"Who approves my carry-over request?" The app knows Omar is asking, so <strong>"my" becomes a node</strong>: the starting point.</p>`,
+        notes: `<ul><li>Same question as page 07, where plain RAG could only say "your line manager".</li></ul>` },
+      { group: "Ask", title: "Plan", body: `<p>The LLM turns the question into a <strong>plan</strong>: four logical steps the app can run.</p>`,
+        notes: `<ul><li>The paper's operators: Retrieval, Sort, Math, Deduce, Output.</li></ul>` },
+      { group: "Ask", title: "Follow the edges", body: `<p>Steps 1 and 2 are <strong>graph lookups</strong>: Omar works in Sales team, which is managed by Sara Ahmed.</p>`,
+        notes: `<ul><li>No similarity search and no LLM: the edges are simply followed.</li></ul>` },
+      { group: "Ask", title: "Read the linked text", body: `<p>Step 3 finds no "approved by" edge. Carry-over <strong>points to its chunk</strong>, Leave policy §4, and the LLM reads it: the line manager.</p>`,
+        notes: `<ul><li>The fallback searches the chunks linked to the node, with keyword plus vector search. In the paper's best setting, this chunk retrieval does much of the work.</li></ul>` },
+      { group: "Ask", title: "Deduce", body: `<p>Sara holds Head of Sales, which is a Line manager, and the Line manager approves carry-over. So <strong>Sara Ahmed</strong> approves.</p>`,
+        notes: `<ul><li>This is where alignment pays off: the "is a" link was added at build time.</li><li>If the facts don't answer the question, the solver can plan more steps, for a few rounds.</li></ul>` },
+      { group: "Ask", title: "Answer", body: `<p>The LLM writes the answer from the facts, with the <strong>path</strong> and the documents behind every step.</p>`,
+        notes: `<ul><li>Compare with page 07: same documents, but plain RAG could not name the approver.</li></ul>` },
+      { group: "Next", title: "Next: GraphRAG", body: `<p>KAG answers precise questions by following connections. GraphRAG answers <strong>what are the main themes across everything?</strong></p>`,
+        notes: `<ul><li>Bridge to topic 09.</li></ul>` },
+    ],
+  });
+})();
+</script>
+</body>
+</html>

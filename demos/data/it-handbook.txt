@@ -1,0 +1,32 @@
+CONFIDENTIAL - Acme Corp - Internal use only
+IT HANDBOOK                                              Page 1 of 2
+
+
+IT Handbook
+
+Devices
+Laptops are issued on your first day and must be re-
+turned when you leave the company.
+Report a lost or stolen device to the IT service desk
+within 1 hour.
+Company data must never be stored on personal USB drives
+or personal cloud accounts.
+
+Accounts and passwords
+Passwords must be at least 14 characters long and are
+changed every 180 days.
+Multi-factor authentication is required for email, VPN
+and the HR portal.
+
+
+CONFIDENTIAL - Acme Corp - Internal use only
+IT HANDBOOK                                              Page 2 of 2
+
+
+Getting help
+The IT service desk is open from 8 am to 6 pm, Sunday to
+Thursday.
+Personal software can only be installed after IT ap-
+proves it.
+The guest Wi-Fi network is for visitors only and is iso-
+lated from the office network.

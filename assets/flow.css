@@ -1,0 +1,87 @@
+/* ==========================================================================
+   RAG, CAG and KAG: pieces shared by the RAG pages (05 and 06)
+   The embedding model and its vectors have their own colour, --c-embed,
+   so the audience recognises them on both pages.
+   ========================================================================== */
+
+:root {
+  --c-embed: #b5e655;
+  --c-doc2: color-mix(in srgb, var(--c-docs) 70%, var(--c-danger));
+  --c-doc3: color-mix(in srgb, var(--c-docs) 70%, #ffffff);
+}
+:root[data-theme="light"] {
+  --c-embed: #5c8a00;
+  --c-doc3: color-mix(in srgb, var(--c-docs) 65%, #6b5a00);
+}
+
+/* a chip travelling between boxes */
+.flyer {
+  position: absolute;
+  z-index: 20;
+  transform: translate(-50%, -50%) scale(.85);
+  opacity: 0;
+  pointer-events: none;
+  max-width: 240px;
+  padding: 4px 10px;
+  border-radius: 7px;
+  background: var(--card);
+  border: 2px solid var(--fc, var(--c-docs));
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .35);
+  font-family: var(--font-ui);
+  font-size: .76em;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition-property: left, top, opacity, transform;
+  transition-timing-function: cubic-bezier(.55, .05, .3, 1), cubic-bezier(.55, .05, .3, 1), ease, ease;
+}
+.flyer.on { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+.flyer.land { opacity: 0; transform: translate(-50%, -50%) scale(.6); transition-duration: .22s !important; }
+.flyer.doc { --fc: var(--c-docs); }
+.flyer.emb { --fc: var(--c-embed); }
+.flyer.q { --fc: var(--c-question); }
+.flyer.sys { --fc: var(--c-system); }
+.flyer .vg { height: 16px; }
+
+/* a vector: a row of bars */
+.vg { display: inline-flex; align-items: flex-end; gap: 2px; height: 18px; vertical-align: middle; }
+.vg i { width: 4px; height: calc(var(--v) * 100%); border-radius: 1px; background: var(--c-embed); }
+
+/* the embedding model */
+.emodel {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 10px;
+  padding: 8px 10px;
+  border: 2px solid var(--c-embed);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--c-embed) 9%, var(--card));
+  font-family: var(--font-ui);
+  transition: box-shadow .3s;
+}
+.emodel b { display: block; font-size: .95em; }
+.emodel small { display: block; color: var(--ink-2); font-size: .8em; }
+.eglyph { width: 40px; height: 35px; }
+.eglyph line { stroke: color-mix(in srgb, var(--c-embed) 45%, var(--rule)); stroke-width: 1; }
+.eglyph circle { fill: var(--card); stroke: var(--c-embed); stroke-width: 2; }
+.emodel.busy { box-shadow: 0 0 0 5px color-mix(in srgb, var(--c-embed) 25%, transparent); }
+.emodel.busy .eglyph circle { animation: eglow .5s ease-in-out infinite alternate; animation-delay: calc(var(--i) * .05s); }
+@keyframes eglow { to { fill: var(--c-embed); } }
+
+/* the meaning map inside the vector database */
+.map { display: block; width: 100%; height: 100%; font-family: var(--font-ui); }
+.map .mlab { font-size: 9.5px; font-weight: 700; fill: var(--ink-2); }
+.map .dot { transform-box: fill-box; transform-origin: center; transition: r .3s, stroke-width .3s, opacity .3s; }
+.map .dots.is-on .dot { animation: dotIn .4s var(--ease) both; animation-delay: var(--d); }
+@keyframes dotIn { from { transform: scale(0); opacity: 0; } }
+.map .dot.hit { stroke: var(--ink); stroke-width: 2; r: 5.5; }
+.map .dim .dot:not(.hit) { opacity: .45; }
+
+@media (prefers-reduced-motion: reduce) {
+  .flyer { display: none; }
+}
+
+/* a jump to a step (not stepping into it): show everything at once */
+.nodelay [data-show] { transition-delay: 0s !important; }

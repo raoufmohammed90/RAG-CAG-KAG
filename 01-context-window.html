@@ -1,0 +1,1428 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Context Window</title>
+<link rel="stylesheet" href="assets/deck.css?v=8">
+<style>
+  /* =================== scene: client, network, server =================== */
+  .scene {
+    position: absolute;
+    inset: 0;
+    padding: 18px 22px 14px;
+    display: grid;
+    grid-template-columns: minmax(0, .8fr) minmax(110px, .34fr) minmax(0, 1.6fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    row-gap: 12px;
+  }
+
+  .box {
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--card);
+    border: 1.5px solid var(--frame);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .box-head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 9px 14px 8px;
+    border-bottom: 1.5px solid var(--rule);
+    font-family: var(--font-ui);
+  }
+  .box-head b { font-size: 1.05em; }
+  .box-head span { color: var(--ink-2); font-size: .8em; }
+  .box.client { --tint: var(--c-history); }
+  .box.server { --tint: var(--l3); }
+  .box.client, .box.server {
+    background: color-mix(in srgb, var(--tint) 5%, var(--card));
+    border-color: color-mix(in srgb, var(--tint) 50%, var(--frame));
+  }
+  .box.client .box-head, .box.server .box-head {
+    background: color-mix(in srgb, var(--tint) 13%, transparent);
+    border-bottom-color: color-mix(in srgb, var(--tint) 30%, var(--rule));
+  }
+
+  /* ---------- client: the chat app ---------- */
+  .sys-chip {
+    margin: 10px 10px 0;
+    padding: 5px 9px;
+    border: 1.5px dashed var(--c-system);
+    border-radius: 6px;
+    font-family: var(--font-ui);
+    font-size: .76em;
+    color: var(--ink-2);
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .sys-chip b { color: var(--ink); font-weight: 600; white-space: nowrap; }
+  .sys-chip .sq { width: 10px; height: 10px; border-radius: 2px; background: var(--c-system); flex: none; }
+  .sys-chip.pulse { animation: pulse 1.2s var(--ease) 2; }
+  @keyframes pulse { 50% { background: color-mix(in srgb, var(--c-system) 20%, transparent); } }
+
+  .conv-label {
+    margin: 9px 10px 0;
+    font-family: var(--font-ui);
+    font-size: .74em;
+    color: var(--ink-2);
+    display: flex;
+    gap: 7px;
+    align-items: center;
+  }
+  .conv-label::before { content: ""; width: 10px; height: 10px; border-radius: 2px; background: var(--c-history); flex: none; }
+
+  .chat {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 7px;
+    margin: 6px 7px 7px;
+    padding: 7px 5px;
+    border-radius: 8px;
+    border: 1.5px solid transparent;
+    transition: border-color .4s, background .4s;
+  }
+  .chat.stored { border-color: var(--c-history); background: color-mix(in srgb, var(--c-history) 7%, transparent); }
+  .chat.flash { animation: flash 1.1s var(--ease) 2; }
+  @keyframes flash { 50% { background: color-mix(in srgb, var(--c-history) 22%, transparent); } }
+
+  .msg {
+    max-width: 90%;
+    padding: 6px 10px;
+    border-radius: 10px;
+    font-size: .8em;
+    line-height: 1.4;
+    flex: none;
+  }
+  .msg.user { align-self: flex-end; background: var(--ink); color: var(--card); border-bottom-right-radius: 3px; }
+  .msg.bot { align-self: flex-start; background: var(--sheet); border: 1.5px solid var(--rule); border-bottom-left-radius: 3px; }
+  .msg.err { border-color: var(--c-danger); color: var(--c-danger); }
+  .msg.more {
+    align-self: stretch;
+    max-width: none;
+    text-align: center;
+    font-family: var(--font-ui);
+    font-size: .74em;
+    color: var(--ink-2);
+    padding: 4px 0;
+    border-top: 1.5px dashed var(--rule);
+    border-bottom: 1.5px dashed var(--rule);
+    border-radius: 0;
+  }
+  .msg.file { display: flex; align-items: center; gap: 9px; font-family: var(--font-ui); }
+  .msg.file small { display: block; opacity: .75; font-size: .85em; }
+  .file-ic {
+    width: 18px; height: 23px; flex: none;
+    border: 1.5px solid currentColor;
+    border-radius: 2px;
+    background: linear-gradient(currentColor, currentColor) 3px 6px / 9px 1.5px no-repeat,
+                linear-gradient(currentColor, currentColor) 3px 10px / 9px 1.5px no-repeat,
+                linear-gradient(currentColor, currentColor) 3px 14px / 6px 1.5px no-repeat;
+  }
+  .msg[hidden] { display: none; }
+  .msg.enter { animation: msgIn .4s var(--ease) both; }
+  @keyframes msgIn {
+    from { opacity: 0; transform: translateY(10px) scale(.97); }
+    to { opacity: 1; transform: none; }
+  }
+
+  .input {
+    margin: 0 10px 10px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    border: 1.5px solid var(--rule);
+    border-radius: 8px;
+    padding: 5px 5px 5px 10px;
+    min-height: 38px;
+    font-size: .8em;
+  }
+  .input .txt { flex: 1; min-width: 0; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .input .txt:empty:not(.typing)::before { content: "Ask the helpdesk"; color: var(--ink-3); }
+  .input .txt.typing::after {
+    content: "";
+    display: inline-block;
+    width: 2px; height: 1.05em;
+    background: var(--ink);
+    margin-left: 1px;
+    vertical-align: -2px;
+    animation: blink .8s steps(1) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+  .input .send {
+    font-family: var(--font-ui);
+    font-weight: 600;
+    font-size: .9em;
+    background: var(--ink);
+    color: var(--card);
+    border-radius: 5px;
+    padding: 4px 10px;
+    transition: transform .15s;
+  }
+  .input .send.press { transform: scale(.88); }
+
+  /* ---------- network between client and server ---------- */
+  .wire { position: relative; }
+  .lane {
+    position: absolute;
+    left: 4px; right: 4px;
+    height: 2px;
+    background: repeating-linear-gradient(90deg, var(--ink-3) 0 6px, transparent 6px 12px);
+  }
+  .lane.req { top: 30%; }
+  .lane.res { top: 70%; }
+  .lane.req::after, .lane.res::after { content: ""; position: absolute; top: -5px; border: 6px solid transparent; }
+  .lane.req::after { right: -6px; border-left: 8px solid var(--ink-3); border-right: 0; }
+  .lane.res::after { left: -6px; border-right: 8px solid var(--ink-3); border-left: 0; }
+  .lane span {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: var(--font-ui);
+    font-size: .74em;
+    color: var(--ink-3);
+    white-space: nowrap;
+  }
+  .lane.req span { bottom: 8px; }
+  .lane.res span { top: 8px; }
+  .wire-cap {
+    position: absolute;
+    left: 0; right: 0; top: 50%;
+    transform: translateY(-50%);
+    text-align: center;
+    font-family: var(--font-ui);
+    font-size: .74em;
+    color: var(--ink-3);
+  }
+
+  .packet {
+    position: absolute;
+    top: 30%;
+    width: 184px;
+    transform: translateY(-50%) scale(.9);
+    opacity: 0;
+    background: var(--card);
+    border: 1.5px solid var(--frame);
+    border-radius: 8px;
+    box-shadow: 4px 4px 0 var(--shadow);
+    padding: 7px 10px 6px;
+    font-family: var(--font-ui);
+    font-size: .74em;
+    z-index: 5;
+    left: -70px;
+    transition: left 1.15s cubic-bezier(.55, .05, .3, 1), opacity .35s, transform .35s var(--ease);
+  }
+  .packet.on { opacity: 1; transform: translateY(-50%) scale(1); }
+  .packet.at-server { left: calc(100% - 110px); }
+  .packet.instant { transition: none; }
+  .packet .ph { font-weight: 700; margin-bottom: 4px; display: flex; justify-content: space-between; }
+  .packet .ph span { color: var(--ink-2); font-weight: 400; }
+  .packet .row { display: grid; grid-template-columns: 10px 1fr auto; gap: 7px; align-items: center; padding: 1px 0; }
+  .packet .row i { width: 10px; height: 10px; border-radius: 2px; }
+  .packet .row b { font-weight: 400; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .packet .tot {
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1.5px solid var(--rule);
+    display: flex;
+    justify-content: space-between;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .err-packet {
+    position: absolute;
+    top: 70%;
+    left: calc(100% - 110px);
+    width: 170px;
+    transform: translateY(-50%);
+    opacity: 0;
+    background: var(--card);
+    border: 2px solid var(--c-danger);
+    color: var(--c-danger);
+    border-radius: 8px;
+    padding: 6px 9px;
+    font-family: var(--font-ui);
+    font-size: .74em;
+    font-weight: 600;
+    z-index: 5;
+    transition: left 1s cubic-bezier(.55, .05, .3, 1), opacity .3s;
+  }
+  .err-packet.on { opacity: 1; }
+  .err-packet.at-client { left: -60px; }
+  .err-packet.instant { transition: none; }
+
+  .stream { position: absolute; top: 70%; left: 4px; right: 4px; height: 0; opacity: 0; transition: opacity .3s; }
+  .stream.on { opacity: 1; }
+  .stream i {
+    position: absolute;
+    top: -6px;
+    width: 12px; height: 12px;
+    border-radius: 2px;
+    background: var(--c-response);
+    animation: flow 1s linear infinite;
+  }
+  .stream i:nth-child(2) { animation-delay: .25s; }
+  .stream i:nth-child(3) { animation-delay: .5s; }
+  .stream i:nth-child(4) { animation-delay: .75s; }
+  .solo {
+    position: absolute;
+    top: calc(70% - 6px);
+    left: calc(100% - 12px);
+    width: 12px; height: 12px;
+    border-radius: 2px;
+    background: var(--c-response);
+    opacity: 0;
+    z-index: 4;
+  }
+  .solo.go { animation: flow 1s linear 1 both; }
+  @keyframes flow {
+    from { left: calc(100% - 12px); opacity: 0; }
+    15% { opacity: 1; }
+    85% { opacity: 1; }
+    to { left: 0; opacity: 0; }
+  }
+
+  /* =================== server: the model =================== */
+  .srv {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) minmax(92px, auto);
+    grid-template-rows: auto minmax(0, 1.15fr) minmax(0, .85fr) auto;
+    grid-template-areas:
+      "wl   status status"
+      "win  net    out"
+      "win  tray   tray"
+      "wu   meta   meta";
+    column-gap: 14px;
+    row-gap: 8px;
+    padding: 10px 14px 10px;
+    font-family: var(--font-ui);
+  }
+  .area-label { font-weight: 600; font-size: .8em; line-height: 1.2; }
+  .area-label small { display: block; font-weight: 400; color: var(--ink-3); }
+
+  /* context window column */
+  .wl { grid-area: wl; align-self: end; }
+  /* the column keeps 14% of its height free below the window, so an overflow always has room */
+  .col {
+    grid-area: win;
+    position: relative;
+    width: clamp(92px, 7.4vw, 140px);
+  }
+  .cw-box {
+    position: absolute;
+    left: 0; right: 0; top: 0;
+    height: 86%;
+    border: 2px solid var(--frame);
+    border-radius: 6px;
+    background: var(--cell-empty);
+    transition: border-color .3s;
+  }
+  .col.over .cw-box { border-color: var(--c-danger); }
+  .wu { grid-area: wu; font-size: .76em; color: var(--ink-2); }
+  .wu b { color: var(--ink); font-size: 1.3em; font-variant-numeric: tabular-nums; }
+  .wu.over b { color: var(--c-danger); }
+
+  .seg {
+    position: absolute;
+    left: 3px; right: 3px;
+    min-height: 5px;
+    border-radius: 3px;
+    color: var(--on-color);
+    font-size: .66em;
+    font-weight: 600;
+    line-height: 1.2;
+    padding: 3px 5px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    transition:
+      height .6s var(--ease) var(--d, 0s),
+      opacity .4s var(--ease) var(--d, 0s),
+      transform .4s var(--ease) var(--d, 0s);
+  }
+  .seg.slow { transition: height var(--grow, 1.8s) linear; }
+  .seg.leave { opacity: 0; transform: translateX(26px); }
+  .seg.system { background: var(--c-system); }
+  .seg.history { background: var(--c-history); }
+  .seg.docs { background: var(--c-docs); }
+  .seg.question { background: var(--c-question); }
+  .seg.response { background: var(--c-response); }
+  .seg.room {
+    background: repeating-linear-gradient(135deg,
+      color-mix(in srgb, var(--c-response) 30%, transparent) 0 3px, transparent 3px 6px);
+    border: 1.5px dashed var(--c-response);
+    color: var(--c-response);
+  }
+  .seg { z-index: 1; }
+  .over-zone {
+    position: absolute;
+    left: 0; right: 0;
+    top: 86%;
+    height: 0;
+    border: 2px dashed var(--c-danger);
+    border-top: 0;
+    border-radius: 0 0 6px 6px;
+    background: repeating-linear-gradient(135deg,
+      color-mix(in srgb, var(--c-danger) 30%, transparent) 0 4px, transparent 4px 8px);
+    opacity: 0;
+    z-index: 0;
+    transition: opacity .4s, height .6s var(--ease);
+  }
+  .col.over .over-zone { opacity: 1; }
+
+  /* status line */
+  .status { grid-area: status; display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: .86em; align-self: end; }
+  .status i { width: 10px; height: 10px; border-radius: 50%; background: var(--ink-3); flex: none; }
+  .status.reading i { background: var(--ink); animation: beat .7s ease-in-out infinite; }
+  .status.writing i { background: var(--c-response); animation: beat .5s ease-in-out infinite; }
+  .status.error { color: var(--c-danger); }
+  .status.error i { background: var(--c-danger); }
+  .status.idle { color: var(--ink-2); font-weight: 400; }
+  .status.idle i { background: var(--accent); }
+  @keyframes beat { 50% { transform: scale(1.5); opacity: .6; } }
+
+  /* the neural network */
+  .net { grid-area: net; position: relative; min-height: 0; }
+  .net svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+  /* each layer has its own colour; the reading wave takes it, the writing pass is pink */
+  .net .n0, .net .e0, .net .lt0 { --lc: var(--l1); }
+  .net .n1, .net .e1, .net .lt1 { --lc: var(--l2); }
+  .net .n2, .net .e2, .net .lt2 { --lc: var(--l3); }
+  .net .n3, .net .e3, .net .lt3, .net .e4 { --lc: var(--l4); }
+  .net .n, .net .e { --wave: var(--lc); }
+  .net.writing .n, .net.writing .e { --wave: var(--c-response); }
+  .net .e { stroke: color-mix(in srgb, var(--lc) 22%, var(--rule)); stroke-width: 1; transition: stroke .2s, stroke-width .2s; }
+  .net .e.hot { stroke: var(--wave); stroke-width: 1.7; }
+  .net .n { fill: var(--card); stroke: color-mix(in srgb, var(--lc) 65%, var(--frame)); stroke-width: 1.8; transition: fill .2s, stroke .2s; }
+  .net .n.hot { fill: var(--wave); stroke: var(--wave); filter: drop-shadow(0 0 4px color-mix(in srgb, var(--wave) 70%, transparent)); }
+  .net .lt { font-family: var(--font-ui); font-size: 11px; font-weight: 700; fill: var(--lc); text-anchor: middle; }
+  .net .loop { fill: none; stroke: var(--rule); stroke-width: 1.5; stroke-dasharray: 4 4; transition: stroke .2s; }
+  .net .loop.hot { stroke: var(--c-response); animation: dash .5s linear infinite; }
+  .net .loop-lab { font-family: var(--font-ui); font-size: 10px; fill: var(--ink-3); text-anchor: middle; }
+  @keyframes dash { to { stroke-dashoffset: -16; } }
+  .net .ft { opacity: 0; }
+  .net.feeding .ft { animation: feed .8s linear infinite; }
+  @keyframes feed {
+    from { transform: translateX(-6px); opacity: 0; }
+    25% { opacity: 1; }
+    to { transform: translateX(46px); opacity: 0; }
+  }
+  .net.busy .n { animation: busy .24s ease-in-out infinite alternate; }
+  .net.busy .n:nth-of-type(3n) { animation-delay: .08s; }
+  .net.busy .n:nth-of-type(3n+1) { animation-delay: .16s; }
+  @keyframes busy { to { fill: var(--c-response); stroke: var(--c-response); } }
+  .net-note { position: absolute; left: 0; right: 0; bottom: -2px; text-align: center; font-size: .66em; color: var(--ink-3); }
+
+  /* output */
+  .out { grid-area: out; align-self: center; text-align: center; }
+  .outbox {
+    border: 2px solid var(--rule);
+    border-radius: 8px;
+    padding: 7px 8px 8px;
+    background: var(--card);
+    transition: border-color .3s;
+  }
+  .outbox.live { border-color: var(--c-response); }
+  .outbox small { display: block; font-size: .7em; color: var(--ink-2); }
+  .outbox b {
+    display: block;
+    min-height: 1.25em;
+    font-size: 1.45em;
+    line-height: 1.25;
+    color: var(--c-response);
+    white-space: pre;
+  }
+  .outbox b.pop { animation: pop .3s var(--ease); }
+  @keyframes pop { from { transform: scale(.6); opacity: 0; } to { transform: none; opacity: 1; } }
+
+  /* working values tray */
+  .tray { grid-area: tray; min-height: 0; display: flex; flex-direction: column; gap: 5px; }
+  .tray-head { display: flex; align-items: baseline; gap: 10px; font-size: .78em; white-space: nowrap; overflow: hidden; }
+  .tray-head b { font-weight: 600; }
+  .tray-head span { color: var(--ink-3); }
+  .tray-head .same-note { color: var(--ink); display: none; align-items: center; gap: 6px; font-weight: 600; animation: capIn .4s var(--ease) both; }
+  .tray.same .tray-head .sub { display: none; }
+  .tray-head .same-note::before { content: ""; width: 16px; height: 10px; border: 2px dashed var(--ink); border-radius: 3px; }
+  .tray.same .same-note { display: inline-flex; }
+  .tray-rows {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 50px minmax(0, 1fr);
+    grid-template-rows: repeat(4, minmax(0, 1fr));
+    row-gap: 4px;
+    column-gap: 8px;
+    border: 1.5px dashed var(--rule);
+    border-radius: 6px;
+    padding: 6px 8px;
+  }
+  .tlab { font-size: .66em; font-weight: 700; color: var(--lc); align-self: center; text-align: right; white-space: nowrap; }
+  .tlab::before {
+    content: "";
+    display: inline-block;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--lc);
+    margin-right: 5px;
+    vertical-align: 1px;
+  }
+  .tsegs { display: flex; gap: 2px; min-height: 0; border-radius: 3px; transition: box-shadow .2s; }
+  .tsegs.read { box-shadow: 0 0 0 2px var(--c-response); }
+  .tseg {
+    --k: var(--ink-3);
+    height: 100%;
+    flex: none;
+    border-radius: 2px;
+    background-color: var(--k);
+    background-image: repeating-linear-gradient(90deg, transparent 0 3px, color-mix(in srgb, var(--card) 45%, transparent) 3px 4px);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform .45s var(--ease) var(--d, 0s), width var(--wdur, .5s) linear, opacity .4s;
+  }
+  .tseg.on { transform: scaleX(1); }
+  .tseg.leave { opacity: 0; }
+  .tray.instant .tseg { transition: none; }
+  .tseg.system { --k: var(--c-system); }
+  .tseg.history { --k: var(--c-history); }
+  .tseg.question { --k: var(--c-question); }
+  .tseg.response { --k: var(--c-response); }
+  .same-wrap { grid-area: 1 / 2 / span 4 / 3; position: relative; pointer-events: none; }
+  .same-box {
+    position: absolute;
+    left: -4px; top: -4px; bottom: -4px;
+    border: 2px dashed var(--ink);
+    border-radius: 5px;
+    opacity: 0;
+    transition: opacity .5s;
+  }
+  .tray.same .same-box { opacity: 1; }
+  .tray-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: .72em; color: var(--ink-2); min-height: 1.2em; }
+  .tray-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .tray-legend i { width: 9px; height: 9px; border-radius: 2px; }
+  .tray-legend b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  /* counters */
+  .meta { grid-area: meta; display: flex; align-items: baseline; gap: 6px 20px; flex-wrap: wrap; font-size: .76em; color: var(--ink-2); }
+  .meta b { color: var(--ink); font-size: 1.45em; font-variant-numeric: tabular-nums; margin-left: 4px; }
+  .meta .memo { margin-left: auto; }
+  .meta .memo strong { color: var(--ink); }
+  .memo.flash strong { animation: memoFlash 1.2s var(--ease) 2; }
+  @keyframes memoFlash { 50% { color: var(--c-danger); } }
+
+  /* ---------- callout row under the scene ---------- */
+  .callout { grid-column: 1 / -1; position: relative; min-height: 60px; }
+  .callout > div { position: absolute; inset: 0; display: flex; align-items: center; gap: 18px; }
+  .callout .big {
+    font-family: var(--font-ui);
+    font-weight: 700;
+    font-size: clamp(19px, 1.6vw, 29px);
+    line-height: 1.15;
+  }
+  .callout .small { color: var(--ink-2); font-size: .9em; max-width: 60em; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  .chip {
+    font-family: var(--font-ui);
+    font-size: .9em;
+    padding: 2px 8px 3px;
+    border-radius: 4px;
+    border: 1.5px solid var(--c-question);
+    background: color-mix(in srgb, var(--c-question) 14%, var(--card));
+    white-space: pre;
+  }
+  .chip:nth-child(even) { background: var(--card); }
+  .callout .eq { font-family: var(--font-ui); color: var(--ink-2); }
+  .callout .eq b { color: var(--ink); }
+
+  /* =================== chart layer (last step) =================== */
+  .chart {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    gap: 12px;
+    font-family: var(--font-ui);
+  }
+  .chart-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px 24px; flex-wrap: wrap; }
+  .chart-head h2 { margin: 0; font-size: 1.25em; }
+  .chart-key { display: flex; gap: 18px; font-size: .82em; color: var(--ink-2); flex-wrap: wrap; }
+  .chart-key span { display: inline-flex; align-items: center; gap: 7px; }
+  .chart-key i { width: 14px; height: 14px; border-radius: 2px; }
+  .hatch {
+    background: repeating-linear-gradient(135deg, var(--ink-3) 0 3px, color-mix(in srgb, var(--ink-3) 35%, transparent) 3px 6px);
+  }
+  .plot { position: relative; min-height: 0; margin-left: 44px; border-left: 1.5px solid var(--frame); border-bottom: 1.5px solid var(--frame); }
+  .gridline { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--rule); }
+  .gridline span { position: absolute; right: calc(100% + 8px); top: -.65em; font-size: .72em; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .bars { position: absolute; inset: 0 6px 0 6px; display: flex; align-items: flex-end; gap: 5px; }
+  .bar {
+    flex: 1;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    transform: scaleY(0);
+    transform-origin: bottom;
+    transition: transform .55s var(--ease) calc(var(--i) * 45ms + .15s);
+  }
+  .chart.is-on .bar { transform: scaleY(1); }
+  .bar .new { background: var(--c-question); border-radius: 2px 2px 0 0; }
+  .xaxis { margin-left: 50px; margin-right: 6px; display: flex; gap: 5px; font-size: .72em; color: var(--ink-3); }
+  .xaxis span { flex: 1; text-align: center; font-variant-numeric: tabular-nums; }
+  .totals { display: flex; gap: 16px 40px; align-items: flex-end; flex-wrap: wrap; border-top: 1.5px solid var(--rule); padding-top: 12px; }
+  .totals .t b { display: block; font-size: clamp(26px, 2.4vw, 42px); line-height: 1; font-variant-numeric: tabular-nums; }
+  .totals .t span { font-size: .82em; color: var(--ink-2); }
+  .totals .t.alt b { color: var(--ink-2); }
+  .totals .foot { margin-left: auto; font-size: .76em; color: var(--ink-3); max-width: 22em; font-family: var(--font-text); }
+</style>
+</head>
+<body data-prev="index.html" data-next="02-prompt-caching.html" data-topic="01">
+<div class="deck">
+  <header class="topbar">
+    <span class="sec">01</span>
+    <span class="name">The context window</span>
+    <span class="spacer"></span>
+    <a href="index.html">Agenda</a>
+  </header>
+
+  <main class="layout tl">
+    <aside class="tl-col">
+      <div class="tl-head">
+        <h1>What the model sees</h1>
+        <p class="sub">Follow one chat, request by request.</p>
+      </div>
+      <ol id="timeline" class="timeline"></ol>
+    </aside>
+
+    <section class="stage" aria-label="Animation">
+
+      <div class="scene" data-show="0-14">
+
+        <!-- client -->
+        <div class="box client">
+          <div class="box-head"><b>Chat app</b><span>the client</span></div>
+          <div class="sys-chip" id="sys-chip" data-show="2+"><span class="sq"></span><b>System prompt</b> added by the app</div>
+          <div class="conv-label" data-show="7+">History, stored by the app</div>
+          <div class="chat" id="chat">
+            <div class="msg user" data-from="1" data-id="q1">How many days of annual leave do I get?</div>
+            <div class="msg bot" data-from="6" data-early="5" data-first="Full" data-id="a1">Full-time staff get 25 days of paid leave a year, plus public holidays.</div>
+            <div class="msg user" data-from="9" data-id="q2">Can I carry unused days into next year?</div>
+            <div class="msg bot" data-from="12" data-early="11" data-first="Yes" data-id="a2">Yes, up to 5 days. Carried-over days must be used by the end of March.</div>
+            <div class="msg more" data-from="13">17 more questions and answers</div>
+            <div class="msg user" data-from="13">Does that also apply to part-time staff?</div>
+            <div class="msg bot" data-from="13" data-first="Yes" data-id="a20">Yes, calculated in proportion to your contracted hours.</div>
+            <div class="msg user file" data-from="14"><span class="file-ic"></span><span>risk-report.pdf<small>about 4,000 tokens</small></span></div>
+            <div class="msg user" data-from="14">What are the main risks in this report?</div>
+            <div class="msg bot err" data-from="14" data-late="1">This conversation is too long to send. Start a new chat or remove the attachment.</div>
+          </div>
+          <div class="input"><span class="txt" id="typed"></span><span class="send" id="send">Send</span></div>
+        </div>
+
+        <!-- internet -->
+        <div class="wire">
+          <div class="lane req"><span>request</span></div>
+          <div class="wire-cap">internet</div>
+          <div class="lane res"><span>response</span></div>
+          <div class="packet" id="packet"></div>
+          <div class="stream" id="stream"><i></i><i></i><i></i><i></i></div>
+          <i class="solo" id="solo"></i>
+          <div class="err-packet" id="err-packet">Error: request is longer than the context window</div>
+        </div>
+
+        <!-- server -->
+        <div class="box server">
+          <div class="box-head"><b>Model</b><span>on the provider's servers</span></div>
+          <div class="srv">
+            <div class="area-label wl">Context window<small>the text it sees</small></div>
+            <div class="col" id="cw"><div class="cw-box"></div><div class="over-zone" id="over-zone"></div></div>
+            <div class="wu" id="wu"><b id="used" class="num">0</b> of 8,000<br>tokens (demo)</div>
+
+            <div class="status idle" id="status"><i></i><span>Waiting</span></div>
+
+            <div class="net" id="net">
+              <svg id="net-svg" viewBox="0 0 330 205" preserveAspectRatio="xMidYMid meet" aria-label="Neural network with four layers"></svg>
+            </div>
+
+            <div class="out">
+              <div class="outbox" id="outbox"><small>Next token</small><b id="out-tok"></b></div>
+            </div>
+
+            <div class="tray" id="tray">
+              <div class="tray-head"><b>Working values</b><span class="sub">what every layer worked out for every token</span><span class="same-note">Same as last time, computed again</span></div>
+              <div class="tray-rows" id="tray-rows">
+                <div class="tlab" style="grid-area:1/1;--lc:var(--l1)">Layer 1</div><div class="tsegs" style="grid-area:1/2"></div>
+                <div class="tlab" style="grid-area:2/1;--lc:var(--l2)">Layer 2</div><div class="tsegs" style="grid-area:2/2"></div>
+                <div class="tlab" style="grid-area:3/1;--lc:var(--l3)">Layer 3</div><div class="tsegs" style="grid-area:3/2"></div>
+                <div class="tlab" style="grid-area:4/1;--lc:var(--l4)">Layer 4</div><div class="tsegs" style="grid-area:4/2"></div>
+                <div class="same-wrap"><div class="same-box" id="same-box"></div></div>
+              </div>
+              <div class="tray-legend" id="tray-legend"></div>
+            </div>
+
+            <div class="meta">
+              <span>Tokens read <b id="c-read" class="num">0</b></span>
+              <span>Tokens written <b id="c-written" class="num">0</b></span>
+              <span class="memo" id="memo" data-show="8+">Kept after answering: <strong>nothing</strong></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- callouts -->
+        <div class="callout">
+          <div data-show="0">
+            <span class="small">A tiny 8,000-token window and a 4-layer network, so you can watch them work. Real models have far bigger windows, dozens of layers and billions of parameters, and behave the same way.</span>
+          </div>
+          <div data-show="2">
+            <div class="chips" aria-label="The question split into tokens">
+              <span class="chip">How</span><span class="chip"> many</span><span class="chip"> days</span><span class="chip"> of</span><span class="chip"> annual</span><span class="chip"> leave</span><span class="chip"> do</span><span class="chip"> I</span><span class="chip"> get</span><span class="chip">?</span>
+            </div>
+            <span class="eq"><b>10 tokens.</b> 1,000 tokens is about 750 English words.</span>
+          </div>
+          <div data-show="5"><span class="big mark">Every token goes through every layer.</span><span class="small">Each layer leaves its working values behind.</span></div>
+          <div data-show="6"><span class="big mark">One full pass through the network per answer token.</span></div>
+          <div data-show="8"><span class="big mark">The model keeps nothing between requests.</span></div>
+          <div data-show="10"><span class="big mark">The first question and answer travel again.</span><span class="small">Every request carries the whole conversation.</span></div>
+          <div data-show="11"><span class="big mark">Same tokens, same order, same values.</span><span class="small">Computed from scratch, again.</span></div>
+          <div data-show="13"><span class="small">Every new question now means reading at least 4,310 tokens through every layer, even a one-line question.</span></div>
+          <div data-show="14"><span class="big num mark">Needed 9,015 tokens. Available 8,000.</span><span class="small">The request, plus room for the answer.</span></div>
+        </div>
+      </div>
+
+      <!-- chart -->
+      <div class="layer chart" data-show="15">
+        <div class="chart-head">
+          <h2>Tokens the model reads for each request in a 20-question chat</h2>
+          <div class="chart-key">
+            <span><i class="hatch"></i>Already read in the previous request</span>
+            <span><i style="background:var(--c-question)"></i>New since the previous request</span>
+          </div>
+        </div>
+        <div class="plot" id="plot"><div class="bars" id="bars"></div></div>
+        <div class="xaxis" id="xaxis"></div>
+        <div class="totals">
+          <div class="t"><b id="tot-read" class="num">0</b><span>tokens read in total</span></div>
+          <div class="t alt"><b id="tot-again" class="num">0</b><span>of them read before (<span id="tot-pct">0</span>%)</span></div>
+          <div class="t alt"><b id="tot-conv" class="num">0</b><span>tokens in the final conversation</span></div>
+          <div class="foot">Assumes a 500-token system prompt and about 200 tokens per question and answer.</div>
+        </div>
+      </div>
+
+    </section>
+  </main>
+</div>
+
+<script src="assets/session.js?v=7"></script>
+<script src="assets/deck.js?v=6"></script>
+<script>
+(function () {
+  const LIMIT = 8000;
+  const $ = (id) => document.getElementById(id);
+  const T = Deck.timeline();
+  const fmt = Deck.fmt;
+  const total = (list) => list.reduce((a, [, n]) => a + n, 0);
+  const pct = (n) => (n / LIMIT) * 100;
+
+  const KIND = {
+    system:   { name: "System prompt",   color: "var(--c-system)" },
+    history:  { name: "Earlier turns",   color: "var(--c-history)" },
+    docs:     { name: "Pasted report",   color: "var(--c-docs)" },
+    question: { name: "New question",    color: "var(--c-question)" },
+    response: { name: "Answer",          color: "var(--c-response)" },
+    room:     { name: "Room for answer", color: "var(--c-response)" },
+  };
+
+  const REQ = {
+    r1: [["system", 500], ["question", 10]],
+    r2: [["system", 500], ["history", 200], ["question", 10]],
+    r3: [["system", 500], ["history", 3800], ["question", 10]],
+    r4: [["system", 500], ["history", 4000], ["docs", 4000], ["question", 15]],
+  };
+  const ANS = ["response", 190];
+  const R1A = [...REQ.r1, ANS];
+
+  /* end state of every step
+     win: context window | tray: working values | out: next token shown
+     read / written: counters | same: outline the values that match last time */
+  const E = { win: [], tray: null, out: "", read: 0, written: 0 };
+  const S = [
+    /* 0 */ { ...E, status: ["idle", "Waiting"] },
+    /* 1 */ { ...E, status: ["idle", "Waiting"] },
+    /* 2 */ { ...E, status: ["idle", "Waiting"], packet: ["r1", "client"] },
+    /* 3 */ { ...E, status: ["idle", "Receiving the request"], packet: ["r1", "server"] },
+    /* 4 */ { ...E, win: REQ.r1, status: ["idle", "Loaded 510 tokens"] },
+    /* 5 */ { ...E, win: [...REQ.r1, ["response", 1]], tray: [REQ.r1, 1000], out: "Full", read: 510, written: 1, status: ["idle", "Read 510 tokens. First token written and sent."] },
+    /* 6 */ { ...E, win: R1A, tray: [R1A, 1000], read: 510, written: 190, status: ["idle", "Answer finished: 190 tokens"] },
+    /* 7 */ { ...E, win: R1A, tray: [R1A, 1000], read: 510, written: 190, status: ["idle", "Answer finished: 190 tokens"] },
+    /* 8 */ { ...E, status: ["idle", "Window and working values cleared"] },
+    /* 9 */ { ...E, status: ["idle", "Waiting"] },
+    /* 10 */ { ...E, win: REQ.r2, status: ["idle", "Loaded 710 tokens"] },
+    /* 11 */ { ...E, win: [...REQ.r2, ["response", 1]], tray: [REQ.r2, 1000], same: 700, out: "Yes", read: 710, written: 1, status: ["idle", "Read 710 tokens. First token written and sent."] },
+    /* 12 */ { ...E, status: ["idle", "Answered, then cleared"] },
+    /* 13 */ { ...E, win: [...REQ.r3, ANS], tray: [[...REQ.r3, ANS], 5000], read: 4310, written: 190, status: ["idle", "Answer finished: 190 tokens"] },
+    /* 14 */ { ...E, win: [...REQ.r4, ["room", 500]], status: ["error", "Rejected: request too long"] },
+    /* 15 */ { ...E, status: ["idle", "Waiting"] },
+  ];
+
+  /* =================== context window =================== */
+  const segLabel = (k, n) => `${KIND[k].name} ${fmt(n)}`;
+  // the window box is the top 86% of its column; the rest is room for an overflow
+  const FRAME = 86;
+  const wp = (n) => (n / LIMIT) * FRAME;
+  const at = (n) => `calc(${wp(n)}% + 2px)`;
+  class Column {
+    constructor(el) { this.el = el; this.segs = []; }
+    make(k) { const s = document.createElement("div"); s.className = "seg " + k; this.el.appendChild(s); return s; }
+    place() {
+      let top = 0;
+      this.segs.forEach(([k, n, s]) => {
+        s.style.top = at(top);
+        s.style.height = wp(n) + "%";
+        s.textContent = pct(n) >= 6 ? segLabel(k, n) : "";
+        s.title = segLabel(k, n);
+        top += n;
+      });
+    }
+    clear() { this.el.querySelectorAll(".seg").forEach((s) => s.remove()); this.segs = []; }
+    growLast(n, secs) {
+      const last = this.segs[this.segs.length - 1];
+      if (!last) return;
+      last[1] = n;
+      last[2].classList.add("slow");
+      last[2].style.setProperty("--grow", secs + "s");
+      this.place();
+    }
+    set(list, mode = "instant", grow = 1.8) {
+      if (mode === "append") {
+        const before = total(this.segs);
+        list.slice(this.segs.length).forEach(([k, n]) => {
+          const s = this.make(k);
+          s.classList.add("slow");
+          s.style.setProperty("--grow", grow + "s");
+          s.style.top = at(before);
+          s.style.height = "0%";
+          this.segs.push([k, n, s]);
+        });
+      } else {
+        this.clear();
+        this.segs = list.map(([k, n]) => [k, n, this.make(k)]);
+        if (mode === "fill") {
+          let top = 0;
+          this.segs.forEach(([, n, s], i) => {
+            s.style.top = at(top);
+            s.style.height = "0%";
+            s.style.setProperty("--d", i * 0.18 + "s");
+            top += n;
+          });
+        }
+      }
+      void this.el.offsetHeight;
+      this.place();
+    }
+    wipe() {
+      const old = this.segs;
+      old.forEach(([, , s], i) => {
+        s.style.setProperty("--d", (old.length - 1 - i) * 0.08 + "s");
+        s.classList.add("leave");
+      });
+      this.segs = [];
+      T.at(700, () => old.forEach(([, , s]) => s.remove()));
+    }
+  }
+  const win = new Column($("cw"));
+  const usedEl = $("used"), wu = $("wu"), overZone = $("over-zone");
+  function winInfo(list, dur) {
+    const n = total(list);
+    Deck.tween(usedEl, n, { duration: dur });
+    const over = n > LIMIT;
+    win.el.classList.toggle("over", over);
+    wu.classList.toggle("over", over);
+    overZone.style.height = over ? wp(n - LIMIT) + 1 + "%" : "0";
+  }
+  function setWin(list, mode, grow) { win.set(list, mode, grow); winInfo(list, mode === "instant" ? 0 : 900); }
+  function wipeWin() { win.wipe(); winInfo([], 600); }
+
+  /* =================== the neural network =================== */
+  const net = $("net"), svg = $("net-svg");
+  const LX = [70, 138, 206, 274], NY = [30, 62, 94, 126, 158];
+  (function buildNet() {
+    let h = "";
+    NY.forEach((y) => (h += `<line class="e e0" x1="4" y1="94" x2="${LX[0]}" y2="${y}"/>`));
+    for (let l = 1; l < 4; l++)
+      NY.forEach((a) => NY.forEach((b) => (h += `<line class="e e${l}" x1="${LX[l - 1]}" y1="${a}" x2="${LX[l]}" y2="${b}"/>`)));
+    NY.forEach((y) => (h += `<line class="e e4" x1="${LX[3]}" y1="${y}" x2="326" y2="94"/>`));
+    h += `<path class="loop" id="loop" d="M 326 106 C 326 214, 4 214, 4 106"/>`;
+    h += `<text class="loop-lab" x="165" y="199">each new token goes back in</text>`;
+    const feed = ["system", "system", "system", "history", "question", "system"];
+    feed.forEach((k, i) =>
+      (h += `<rect class="ft" x="0" y="89" width="10" height="10" rx="2" style="fill:var(--c-${k});animation-delay:${i * 0.13}s"/>`));
+    LX.forEach((x, l) => {
+      h += `<text class="lt lt${l}" x="${x}" y="12">Layer ${l + 1}</text>`;
+      NY.forEach((y) => (h += `<circle class="n n${l}" cx="${x}" cy="${y}" r="9"/>`));
+    });
+    svg.innerHTML = h;
+  })();
+  const loop = svg.querySelector("#loop");
+  function layerHot(l, on) {
+    svg.querySelectorAll(`.n${l}, .e${l}`).forEach((el) => el.classList.toggle("hot", on));
+  }
+  function outHot(on) { svg.querySelectorAll(".e4").forEach((el) => el.classList.toggle("hot", on)); }
+  function coolNet() {
+    svg.querySelectorAll(".hot").forEach((el) => el.classList.remove("hot"));
+    net.classList.remove("writing", "busy", "feeding");
+  }
+
+  /* =================== working values tray =================== */
+  const tray = $("tray"), rows = [...tray.querySelectorAll(".tsegs")], legend = $("tray-legend"), sameBox = $("same-box");
+  let trayScale = 1000;
+  function trayRender(list, scale, filled) {
+    trayScale = scale;
+    tray.classList.add("instant");
+    rows.forEach((row, r) => {
+      row.innerHTML = "";
+      list.forEach(([k, n]) => {
+        const s = document.createElement("div");
+        s.className = "tseg " + k + (r < filled ? " on" : "");
+        s.style.width = (n ? Math.max(1.4, (n / scale) * 100) : 0) + "%";
+        row.appendChild(s);
+      });
+    });
+    void tray.offsetWidth;
+    tray.classList.remove("instant");
+    trayLegend(list);
+  }
+  function trayLegend(list) {
+    legend.innerHTML = list.map(([k, n]) =>
+      `<span><i style="background:${KIND[k].color}"></i>${KIND[k].name} <b data-k="${k}">${fmt(n)}</b></span>`).join("");
+  }
+  function trayFillRow(r) {
+    [...rows[r].children].forEach((s, i) => { s.style.setProperty("--d", i * 0.12 + "s"); s.classList.add("on"); });
+  }
+  function trayAnswer(n, ms) {
+    tray.style.setProperty("--wdur", ms + "ms");
+    rows.forEach((row) => {
+      const s = row.querySelector(".response");
+      if (s) s.style.width = Math.max(1.4, (n / trayScale) * 100) + "%";
+    });
+    const b = legend.querySelector('[data-k="response"]');
+    if (b) Deck.tween(b, n, { duration: ms });
+  }
+  function trayWipe() {
+    tray.querySelectorAll(".tseg").forEach((s) => s.classList.add("leave"));
+    tray.classList.remove("same");
+    T.at(600, () => { rows.forEach((r) => (r.innerHTML = "")); legend.innerHTML = ""; });
+  }
+  function traySame(tokens) {
+    sameBox.style.width = `calc(${(tokens / trayScale) * 100}% + 8px)`;
+    tray.classList.add("same");
+  }
+
+  /* =================== counters, status, output =================== */
+  const cRead = $("c-read"), cWritten = $("c-written"), outTok = $("out-tok"), outbox = $("outbox"), statusEl = $("status");
+  function counters(read, written, dur = 0) {
+    Deck.tween(cRead, read, { duration: dur });
+    Deck.tween(cWritten, written, { duration: dur });
+  }
+  function setOut(text, live) {
+    outTok.textContent = text;
+    outbox.classList.toggle("live", !!live);
+    if (text) { outTok.classList.remove("pop"); void outTok.offsetWidth; outTok.classList.add("pop"); }
+  }
+  function setStatus([cls, text]) {
+    statusEl.className = "status " + cls;
+    statusEl.querySelector("span").textContent = text;
+  }
+
+  /* =================== reading: one pass through every layer =================== */
+  function runReading(list, scale, { firstToken, layerMs = 750, start = 0, same = 0, bubble = null }) {
+    const n = total(list);
+    T.at(start, () => {
+      trayRender(list, scale, 0);
+      coolNet();
+      net.classList.add("feeding");
+      setStatus(["reading", `Reading ${fmt(n)} tokens, layer by layer`]);
+      Deck.tween(cRead, n, { duration: layerMs * 4 + 300 });
+      Deck.tween(cWritten, 0, { duration: 0 });
+    });
+    for (let l = 0; l < 4; l++) {
+      T.at(start + 250 + l * layerMs, () => {
+        if (l > 0) layerHot(l - 1, false);
+        layerHot(l, true);
+        trayFillRow(l);
+      });
+    }
+    T.at(start + 250 + 4 * layerMs, () => {
+      net.classList.remove("feeding");
+      layerHot(3, false);
+      outHot(true);
+      setOut(firstToken, true);
+      Deck.tween(cWritten, 1, { duration: 0 });
+    });
+    const tEnd = start + 250 + 4 * layerMs;
+    T.at(tEnd + 600, () => {
+      outHot(false);
+      const withFirst = [...list, ["response", 1]];
+      win.set(withFirst, "append", 0.4);
+      winInfo(withFirst, 300);
+      setStatus(["writing", "Writing it into the context window and sending it"]);
+      solo.classList.remove("go"); void solo.offsetWidth; solo.classList.add("go");
+    });
+    T.at(tEnd + 1550, () => { if (bubble) revealFirst(bubble); });
+    T.at(tEnd + 1900, () => {
+      setStatus(["idle", `Read ${fmt(n)} tokens. First token written and sent.`]);
+      if (same) traySame(same);
+    });
+    return tEnd + 1900;
+  }
+
+  /* =================== writing: one pass per new token =================== */
+  function writePass(t, tokenText, written, perLayer = 100) {
+    T.at(t, () => { net.classList.add("writing"); loop.classList.add("hot"); });
+    for (let l = 0; l < 4; l++) {
+      T.at(t + 160 + l * perLayer, () => {
+        if (l > 0) { layerHot(l - 1, false); rows[l - 1].classList.remove("read"); }
+        layerHot(l, true);
+        rows[l].classList.add("read");
+      });
+    }
+    T.at(t + 160 + 4 * perLayer, () => {
+      layerHot(3, false);
+      rows[3].classList.remove("read");
+      loop.classList.remove("hot");
+      outHot(true);
+      setOut(tokenText, true);
+      Deck.tween(cWritten, written, { duration: 0 });
+    });
+    T.at(t + 160 + 4 * perLayer + 120, () => outHot(false));
+  }
+
+  function runWriting(base, answerTokens, { slow, rest, fastMs, bubble, start = 0 }) {
+    // base: the request; the answer grows on top of it
+    T.at(start, () => {
+      trayRender([...base, ["response", 0]], trayScale, 4);
+      setStatus(["writing", "Writing the answer, one token at a time"]);
+      const secs = (slow.length * 600 + fastMs + 400) / 1000;
+      const last = win.segs[win.segs.length - 1];
+      if (last && last[0] === "response") win.growLast(190, secs);
+      else win.set([...base, ANS], "append", secs);
+      winInfo([...base, ANS], slow.length * 600 + fastMs);
+      stream.classList.add("on");
+    });
+    T.at(start + 150, () => reveal(bubble, slow.length * 600 + fastMs + 200));
+    let t = start + 100;
+    slow.forEach((w, i) => {
+      writePass(t, w, i + 2);
+      T.at(t + 560, () => trayAnswer(i + 2, 400));
+      t += 600;
+    });
+    // the rest of the answer, sped up
+    T.at(t, () => {
+      net.classList.add("writing", "busy");
+      loop.classList.add("hot");
+      setStatus(["writing", "…and so on, for every token"]);
+      Deck.tween(cWritten, answerTokens, { duration: fastMs });
+      trayAnswer(answerTokens, fastMs);
+      const words = rest;
+      words.forEach((w, i) => T.at((fastMs / words.length) * i, () => setOut(w, true)));
+    });
+    T.at(t + fastMs, () => {
+      coolNet();
+      loop.classList.remove("hot");
+      stream.classList.remove("on");
+      setOut("", false);
+      setStatus(["idle", `Answer finished: ${answerTokens} tokens`]);
+    });
+    return t + fastMs;
+  }
+
+  /* =================== packets =================== */
+  const packet = $("packet"), stream = $("stream"), errPacket = $("err-packet"), solo = $("solo");
+  const ROW = { system: "System prompt", history: "Earlier turns", docs: "Pasted report", question: "New question" };
+  function packetHTML(key) {
+    const list = REQ[key];
+    return `<div class="ph">Request<span>to the model</span></div>` +
+      list.map(([k, n]) => `<div class="row"><i style="background:${KIND[k].color}"></i>${ROW[k]}<b>${fmt(n)}</b></div>`).join("") +
+      `<div class="tot"><span>Total</span><span>${fmt(total(list))} tokens</span></div>`;
+  }
+  function setPacket(spec, instant) {
+    packet.classList.toggle("instant", !!instant);
+    if (!spec) packet.classList.remove("on");
+    else {
+      packet.innerHTML = packetHTML(spec[0]);
+      packet.classList.add("on");
+      packet.classList.toggle("at-server", spec[1] === "server");
+    }
+    if (instant) { void packet.offsetWidth; packet.classList.remove("instant"); }
+  }
+  function sendRequest(key, startAt, then) {
+    T.at(startAt, () => { setPacket([key, "client"], true); packet.classList.remove("on"); });
+    T.at(startAt + 30, () => packet.classList.add("on"));
+    T.at(startAt + 750, () => { setPacket([key, "server"]); setStatus(["idle", "Receiving the request"]); });
+    T.at(startAt + 2000, () => { setPacket(null); then(); });
+  }
+  function setErr(state, instant) {
+    errPacket.classList.toggle("instant", !!instant);
+    errPacket.classList.toggle("on", state !== "off");
+    errPacket.classList.toggle("at-client", state === "client");
+    if (instant) { void errPacket.offsetWidth; errPacket.classList.remove("instant"); }
+  }
+
+  /* =================== chat =================== */
+  const chat = $("chat"), typed = $("typed"), send = $("send"), sysChip = $("sys-chip"), memo = $("memo");
+  const msgs = [...chat.querySelectorAll(".msg")];
+  msgs.forEach((m) => { if (!m.children.length) m._full = m.textContent; });
+  function showChat(step) {
+    msgs.forEach((m) => {
+      const from = Number(m.dataset.from);
+      const early = m.dataset.early ? Number(m.dataset.early) : from;
+      m.hidden = step < early;
+      m.classList.remove("enter");
+      if (m._full) m.textContent = step < from ? m.dataset.first : m._full;
+    });
+  }
+  // hide what appears in this step (but keep an answer whose first word is already showing)
+  function hideNew(step) {
+    msgs.forEach((m) => {
+      const early = m.dataset.early ? Number(m.dataset.early) : null;
+      if (Number(m.dataset.from) === step) {
+        if (early !== null && early < step) m.textContent = m.dataset.first; // keep the first word, type the rest
+        else m.hidden = true;
+      }
+      if (early === step) m.hidden = true;
+    });
+  }
+  function revealFirst(m) {
+    m.hidden = false;
+    m.textContent = m.dataset.first;
+    m.classList.remove("enter"); void m.offsetWidth; m.classList.add("enter");
+  }
+  function reveal(m, typeMs) {
+    if (typeof m === "string") m = chat.querySelector(m);
+    if (!m) return;
+    const already = !m.hidden && m._full && m._full.startsWith(m.textContent) ? m.textContent.length : 0;
+    m.hidden = false;
+    if (!already) { m.classList.remove("enter"); void m.offsetWidth; m.classList.add("enter"); }
+    if (typeMs && m._full) {
+      const full = m._full;
+      if (!already) m.textContent = "";
+      const per = typeMs / Math.max(1, full.length - already);
+      for (let i = already + 1; i <= full.length; i++) T.at((i - already) * per, () => { m.textContent = full.slice(0, i); });
+    }
+  }
+  function typeInput(text, startAt, per = 38) {
+    T.at(startAt, () => { typed.textContent = ""; typed.classList.add("typing"); });
+    for (let i = 1; i <= text.length; i++) T.at(startAt + i * per, () => { typed.textContent = text.slice(0, i); });
+    const end = startAt + text.length * per + 300;
+    T.at(end, () => { typed.classList.remove("typing"); typed.textContent = ""; send.classList.add("press"); });
+    T.at(end + 160, () => send.classList.remove("press"));
+    return end;
+  }
+  const textOf = (id) => chat.querySelector(`[data-id="${id}"]`)._full;
+  const bubble = (id) => chat.querySelector(`[data-id="${id}"]`);
+
+  /* =================== end state of a step, no animation =================== */
+  function settle(step) {
+    const s = S[step];
+    showChat(step);
+    typed.textContent = "";
+    typed.classList.remove("typing");
+    setWin(s.win, "instant");
+    coolNet();
+    loop.classList.remove("hot");
+    rows.forEach((r) => r.classList.remove("read"));
+    tray.classList.remove("same");
+    if (s.tray) trayRender(s.tray[0], s.tray[1], 4);
+    else { rows.forEach((r) => (r.innerHTML = "")); legend.innerHTML = ""; }
+    if (s.same) traySame(s.same);
+    setOut(s.out, !!s.out);
+    counters(s.read, s.written);
+    setStatus(s.status);
+    setPacket(s.packet || null, true);
+    stream.classList.remove("on");
+    setErr("off", true);
+    sysChip.classList.remove("pulse");
+    chat.classList.toggle("stored", step >= 7 && step <= 14);
+    chat.classList.remove("flash");
+    memo.classList.remove("flash");
+    if (step === 15) runChart(false);
+  }
+
+  /* =================== forward animations =================== */
+  const PLAY = {
+    1() {
+      hideNew(1);
+      const end = typeInput(textOf("q1"), 250);
+      T.at(end, () => reveal(bubble("q1")));
+    },
+    2() {
+      setPacket(["r1", "client"], true);
+      packet.classList.remove("on");
+      T.at(30, () => packet.classList.add("on"));
+      sysChip.classList.add("pulse");
+    },
+    3() { setPacket(["r1", "server"]); setStatus(["idle", "Receiving the request"]); },
+    4() {
+      setPacket(null);
+      T.at(250, () => { setWin(REQ.r1, "fill"); setStatus(S[4].status); });
+    },
+    5() { runReading(REQ.r1, 1000, { firstToken: "Full", layerMs: 800, bubble: bubble("a1") }); },
+    6() {
+      hideNew(6);
+      setOut("Full", true);
+      runWriting(REQ.r1, 190, { slow: ["-time", "staff", "get", "25", "days"], rest: ["of", "paid", "leave", "a", "year", "plus", "public", "holidays", "."], fastMs: 1600, bubble: bubble("a1") });
+    },
+    7() { chat.classList.add("stored", "flash"); },
+    8() {
+      wipeWin();
+      trayWipe();
+      coolNet();
+      setOut("", false);
+      counters(0, 0, 600);
+      setStatus(S[8].status);
+      T.at(300, () => memo.classList.add("flash"));
+    },
+    9() {
+      hideNew(9);
+      const end = typeInput(textOf("q2"), 250);
+      T.at(end, () => reveal(bubble("q2")));
+    },
+    10() {
+      sendRequest("r2", 100, () => { setWin(REQ.r2, "fill"); setStatus(S[10].status); });
+    },
+    11() { runReading(REQ.r2, 1000, { firstToken: "Yes", layerMs: 800, same: 700, bubble: bubble("a2") }); },
+    12() {
+      hideNew(12);
+      tray.classList.remove("same");
+      setOut("Yes", true);
+      const end = runWriting(REQ.r2, 190, { slow: [",", "up", "to"], rest: ["5", "days", ".", "Carried", "-over", "days", "must", "be", "used", "…"], fastMs: 1200, bubble: bubble("a2") });
+      T.at(end + 700, () => {
+        wipeWin();
+        trayWipe();
+        setOut("", false);
+        counters(0, 0, 600);
+        setStatus(S[12].status);
+      });
+    },
+    13() {
+      hideNew(13);
+      chat.querySelectorAll('[data-from="13"]').forEach((m, i) => T.at(150 + i * 350, () => reveal(m)));
+      sendRequest("r3", 900, () => {
+        setWin(REQ.r3, "fill");
+        const end = runReading(REQ.r3, 5000, { firstToken: "Yes", layerMs: 650, start: 500, bubble: bubble("a20") });
+        runWriting(REQ.r3, 190, { slow: [",", "calculated"], rest: ["in", "proportion", "to", "your", "contracted", "hours", "."], fastMs: 1300, bubble: bubble("a20"), start: end + 300 });
+      });
+    },
+    14() {
+      hideNew(14);
+      wipeWin();
+      trayWipe();
+      setOut("", false);
+      counters(0, 0, 400);
+      const fresh = [...chat.querySelectorAll('[data-from="14"]')];
+      fresh.filter((m) => !m.dataset.late).forEach((m, i) => T.at(200 + i * 400, () => reveal(m)));
+      sendRequest("r4", 1500, () => {
+        setWin(S[14].win, "fill");
+        setStatus(["reading", "Loading 9,015 tokens"]);
+        T.at(1300, () => setStatus(S[14].status));
+        T.at(1500, () => setErr("server", true));
+        T.at(1600, () => setErr("client"));
+        T.at(2800, () => { setErr("off"); reveal(fresh.find((m) => m.dataset.late)); });
+      });
+    },
+    15() { runChart(true); },
+  };
+
+  /* =================== chart =================== */
+  const N = 20, FIRST = 510, TURN = 200, MAX = 4500;
+  const size = (n) => FIRST + (n - 1) * TURN;
+  (function buildChart() {
+    const plot = $("plot"), bars = $("bars"), xaxis = $("xaxis");
+    [1000, 2000, 3000, 4000].forEach((v) => {
+      const g = document.createElement("div");
+      g.className = "gridline";
+      g.style.bottom = (v / MAX) * 100 + "%";
+      g.innerHTML = `<span>${fmt(v)}</span>`;
+      plot.insertBefore(g, bars);
+    });
+    for (let n = 1; n <= N; n++) {
+      const again = n === 1 ? 0 : size(n - 1);
+      const fresh = size(n) - again;
+      const b = document.createElement("div");
+      b.className = "bar";
+      b.style.setProperty("--i", n);
+      b.title = `Request ${n}: ${fmt(size(n))} tokens`;
+      b.innerHTML = `<div class="new" style="height:${(fresh / MAX) * 100}%"></div>` +
+        `<div class="hatch" style="height:${(again / MAX) * 100}%"></div>`;
+      bars.appendChild(b);
+      const x = document.createElement("span");
+      x.textContent = n;
+      xaxis.appendChild(x);
+    }
+  })();
+  function runChart(animate) {
+    let read = 0, again = 0;
+    for (let n = 1; n <= N; n++) { read += size(n); again += n === 1 ? 0 : size(n - 1); }
+    const d = animate ? 1600 : 0;
+    Deck.tween($("tot-read"), read, { duration: d });
+    Deck.tween($("tot-again"), again, { duration: d });
+    Deck.tween($("tot-pct"), Math.round((again / read) * 100), { duration: d });
+    Deck.tween($("tot-conv"), size(N), { duration: d });
+  }
+
+  /* =================== render =================== */
+  function render(step, prev) {
+    T.clear();
+    const forward = prev === step - 1 && !Deck.reduced();
+    if (!forward || !PLAY[step]) return settle(step);
+    settle(prev);
+    showChat(step);
+    PLAY[step]();
+  }
+
+  Deck.init({
+    render,
+    groupColors: {
+      "First question": "var(--c-question)",
+      "Follow-up": "var(--c-history)",
+      "Later in the chat": "var(--c-docs)",
+      "What it costs": "var(--c-response)",
+    },
+    steps: [
+      {
+        title: "A chat app and a model",
+        body: `<p>The chat app runs on your device. The model runs on the provider's servers.</p>
+               <p>Inside the model: a <strong>context window</strong> holding the text, a <strong>neural network</strong> that processes it, and a tray for its <strong>working values</strong>.</p>`,
+        notes: `<ul>
+          <li>Walk the server box left to right: window (what it sees), network (what does the work), tray (notes it keeps while working), output (the next token).</li>
+          <li>The network is drawn with 4 layers of 5 nodes. Real models: dozens of layers, billions of parameters.</li></ul>`,
+      },
+      {
+        group: "First question",
+        title: "You ask a question",
+        body: `<p>You type a question and press Send.</p>`,
+        notes: `<ul><li>Fictional example: an internal helpdesk assistant answering HR questions.</li></ul>`,
+      },
+      {
+        group: "First question",
+        title: "The app builds the request",
+        body: `<p>The app puts its hidden <span class="tk system">system prompt</span> first and your <span class="tk question">question</span> after it.</p>
+               <p>Everything is measured in <strong>tokens</strong>: words and pieces of words.</p>`,
+        notes: `<ul>
+          <li>The system prompt is the app's instructions: role, rules, tone. Users never see it.</li>
+          <li>Tokens: common words are one token; rare words, numbers and code split into more. Arabic usually needs more tokens per word than English.</li></ul>`,
+      },
+      {
+        group: "First question",
+        title: "The request travels to the model",
+        body: `<p>510 tokens go over the network to the model's server.</p>`,
+        notes: `<ul><li>A normal API call: an HTTPS request with the text inside it.</li></ul>`,
+      },
+      {
+        group: "First question",
+        title: "It lands in the context window",
+        body: `<p>The server loads the whole request into the context window. Nothing has been processed yet.</p>`,
+        notes: `<ul><li>Point at the idle network and the empty tray.</li></ul>`,
+      },
+      {
+        group: "First question",
+        title: "The network reads every token",
+        body: `<p>All 510 tokens flow into the network and pass through it layer by layer. That takes time.</p>
+               <p>As the wave passes each layer, the layer leaves <strong>working values</strong> for every token in the tray. The last layer produces the first answer token, which is written into the context window and sent to the app.</p>`,
+        notes: `<ul>
+          <li>Follow the wave: layer 1 lights up and its row in the tray fills, then layer 2, and so on.</li>
+          <li>Working values are what each layer worked out about each token in this context. Engineers know them as attention keys and values.</li>
+          <li>All tokens of the request go through together, so this part is relatively fast per token.</li></ul>`,
+      },
+      {
+        group: "First question",
+        title: "It writes the answer, one token at a time",
+        body: `<p>Each new token goes back into the network for another full pass. On the way, every layer looks up the working values already in the tray (the pink outline), then adds the new token's values.</p>
+               <p>Each token streams to the app as soon as it is written.</p>`,
+        notes: `<ul>
+          <li>Watch the dashed loop: output goes back in as input. That's why answers appear word by word.</li>
+          <li>The tray is what makes this efficient: each new token only needs its own pass, not a re-read of the whole request.</li>
+          <li>The first few tokens are slow; then we fast-forward to 190.</li></ul>`,
+      },
+      {
+        group: "First question",
+        title: "The app saves the answer",
+        body: `<p>The app adds the answer to the <span class="tk history">conversation history</span> it keeps on its side.</p>
+               <p><strong>The app keeps the history, not the model.</strong></p>`,
+        notes: `<ul><li>Chat "memory" is the app's job. The model has no idea this is the same person or the same chat.</li></ul>`,
+      },
+      {
+        group: "First question",
+        title: "The model forgets",
+        body: `<p>Once the answer is sent, the context window and the working values are thrown away. Nothing from this chat stays with the model.</p>
+               <p>This is what <strong>stateless</strong> means.</p>`,
+        notes: `<ul>
+          <li>Key moment. Pause here. The tray empties, the counters go back to zero.</li>
+          <li>Providers may keep logs for safety or billing, but the model itself carries nothing into the next request.</li></ul>`,
+      },
+      {
+        group: "Follow-up",
+        title: "You ask a follow-up",
+        body: `<p>"Can I carry unused days into next year?"</p>
+               <p>On its own, this question makes no sense. Unused days of what?</p>`,
+        notes: `<ul><li>Ask the room: how will the model know we mean annual leave, if it forgot everything?</li></ul>`,
+      },
+      {
+        group: "Follow-up",
+        title: "Everything is sent again",
+        body: `<p>The app sends the system prompt, the first question and answer, and the new question: <strong>710 tokens</strong>.</p>`,
+        notes: `<ul><li>Point at the packet: "Earlier turns" is the part that was already sent once.</li></ul>`,
+      },
+      {
+        group: "Follow-up",
+        title: "All 710 tokens go through again",
+        body: `<p>The network reads the whole request again, layer by layer, then writes the first answer token into the window and sends it.</p>
+               <p>For the first 700 tokens, the system prompt and the first turn, the working values come out <strong>exactly the same as last time</strong>. Only the 10 tokens of the new question are new.</p>`,
+        notes: `<ul>
+          <li>Point at the dashed outline in the tray: identical to what was computed, then thrown away, one request ago.</li>
+          <li>Same values only for an identical beginning: change one early token and every value after it changes, because each token depends on everything before it.</li>
+          <li>Leave the obvious question hanging ("why not keep them?"). Topic 02 answers it.</li></ul>`,
+      },
+      {
+        group: "Follow-up",
+        title: "Answer, save, forget",
+        body: `<p>Same cycle: the model writes the answer token by token, the app saves it, and the window and working values are cleared.</p>`,
+        notes: `<ul><li>Every turn repeats this loop. The only thing that changes is that the request gets bigger.</li></ul>`,
+      },
+      {
+        group: "Later in the chat",
+        title: "Twenty questions in",
+        body: `<p>The history has grown to 3,800 tokens. Every question now sends <strong>4,310 tokens</strong> through every layer before the first word of the answer, and almost all of them were processed before.</p>`,
+        notes: `<ul><li>Agents fill the window much faster: every tool call and tool result goes into the history too.</li></ul>`,
+      },
+      {
+        group: "Later in the chat",
+        title: "The window overflows",
+        body: `<p>You attach a 4,000-token report. With room for the answer, the request needs 9,015 tokens. The window holds 8,000.</p>
+               <p>The server rejects it before the network runs. The app has to drop, shorten or summarize something, or start a new chat.</p>`,
+        notes: `<ul>
+          <li>Real apps trim old turns, summarize them, or pick only the relevant parts of documents. That last idea is where RAG comes from.</li>
+          <li>Even before the hard limit, very long contexts can lower quality: details in the middle are easier to miss.</li></ul>`,
+      },
+      {
+        group: "What it costs",
+        title: "The same tokens, again and again",
+        body: `<p>Each request re-reads everything before it through every layer. Over 20 questions, the model reads about 48,000 tokens for a conversation of about 4,300.</p>
+               <p>Most of that work was already done before. <strong>Does it have to be done again?</strong></p>`,
+        notes: `<ul>
+          <li>Providers charge for every input token in every request, so this repetition costs real money and time.</li>
+          <li>Leave the question open; topic 02 answers it.</li></ul>`,
+      },
+    ],
+  });
+})();
+</script>
+</body>
+</html>

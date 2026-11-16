@@ -1,0 +1,8 @@
+anthropic     # calls Claude (all three demos)
+fastembed     # local embedding model (RAG step 3)
+chromadb      # local vector database (RAG step 4)
+ipykernel     # run the notebooks in VS Code
+pandas        # tables in the notebooks
+matplotlib    # charts in the notebooks
+networkx      # knowledge graph (KAG notebook)
+mistune       # renders the answer's Markdown in notebook chat bubbles

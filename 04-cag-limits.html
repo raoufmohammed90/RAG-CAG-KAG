@@ -1,0 +1,1216 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Where CAG Stops Working</title>
+<link rel="stylesheet" href="assets/deck.css?v=8">
+<style>
+  /* =================== scene: client, network, server =================== */
+  .scene {
+    position: absolute;
+    inset: 0;
+    padding: 18px 22px 14px;
+    display: grid;
+    grid-template-columns: minmax(0, .8fr) minmax(110px, .34fr) minmax(0, 1.6fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    row-gap: 12px;
+  }
+
+  .box {
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--card);
+    border: 1.5px solid var(--frame);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .box-head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 9px 14px 8px;
+    border-bottom: 1.5px solid var(--rule);
+    font-family: var(--font-ui);
+  }
+  .box-head b { font-size: 1.05em; }
+  .box-head span { color: var(--ink-2); font-size: .8em; }
+  .box.client { --tint: var(--c-history); }
+  .box.server { --tint: var(--l3); }
+  .box.client, .box.server {
+    background: color-mix(in srgb, var(--tint) 5%, var(--card));
+    border-color: color-mix(in srgb, var(--tint) 50%, var(--frame));
+  }
+  .box.client .box-head, .box.server .box-head {
+    background: color-mix(in srgb, var(--tint) 13%, transparent);
+    border-bottom-color: color-mix(in srgb, var(--tint) 30%, var(--rule));
+  }
+
+  /* ---------- client: the chat app ---------- */
+  .sys-chip {
+    margin: 10px 10px 0;
+    padding: 5px 9px;
+    border: 1.5px dashed var(--c-system);
+    border-radius: 6px;
+    font-family: var(--font-ui);
+    font-size: .76em;
+    color: var(--ink-2);
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .sys-chip b { color: var(--ink); font-weight: 600; white-space: nowrap; }
+  .sys-chip .sq { width: 10px; height: 10px; border-radius: 2px; background: var(--c-system); flex: none; }
+  .sys-chip.pulse { animation: pulse 1.2s var(--ease) 2; }
+  @keyframes pulse { 50% { background: color-mix(in srgb, var(--c-system) 20%, transparent); } }
+
+  .conv-label {
+    margin: 9px 10px 0;
+    font-family: var(--font-ui);
+    font-size: .74em;
+    color: var(--ink-2);
+    display: flex;
+    gap: 7px;
+    align-items: center;
+  }
+  .conv-label::before { content: ""; width: 10px; height: 10px; border-radius: 2px; background: var(--c-history); flex: none; }
+
+  .chat {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 7px;
+    margin: 6px 7px 7px;
+    padding: 7px 5px;
+    border-radius: 8px;
+    border: 1.5px solid transparent;
+    transition: border-color .4s, background .4s;
+  }
+  .chat.stored { border-color: var(--c-history); background: color-mix(in srgb, var(--c-history) 7%, transparent); }
+  .chat.flash { animation: flash 1.1s var(--ease) 2; }
+  @keyframes flash { 50% { background: color-mix(in srgb, var(--c-history) 22%, transparent); } }
+
+  .msg {
+    max-width: 90%;
+    padding: 6px 10px;
+    border-radius: 10px;
+    font-size: .8em;
+    line-height: 1.4;
+    flex: none;
+  }
+  .msg.user { align-self: flex-end; background: var(--ink); color: var(--card); border-bottom-right-radius: 3px; }
+  .msg.bot { align-self: flex-start; background: var(--sheet); border: 1.5px solid var(--rule); border-bottom-left-radius: 3px; }
+  .msg.err { border-color: var(--c-danger); color: var(--c-danger); }
+  .msg.more {
+    align-self: stretch;
+    max-width: none;
+    text-align: center;
+    font-family: var(--font-ui);
+    font-size: .74em;
+    color: var(--ink-2);
+    padding: 4px 0;
+    border-top: 1.5px dashed var(--rule);
+    border-bottom: 1.5px dashed var(--rule);
+    border-radius: 0;
+  }
+  .msg.file { display: flex; align-items: center; gap: 9px; font-family: var(--font-ui); }
+  .msg.file small { display: block; opacity: .75; font-size: .85em; }
+  .file-ic {
+    width: 18px; height: 23px; flex: none;
+    border: 1.5px solid currentColor;
+    border-radius: 2px;
+    background: linear-gradient(currentColor, currentColor) 3px 6px / 9px 1.5px no-repeat,
+                linear-gradient(currentColor, currentColor) 3px 10px / 9px 1.5px no-repeat,
+                linear-gradient(currentColor, currentColor) 3px 14px / 6px 1.5px no-repeat;
+  }
+  .msg[hidden] { display: none; }
+  .msg.enter { animation: msgIn .4s var(--ease) both; }
+  @keyframes msgIn {
+    from { opacity: 0; transform: translateY(10px) scale(.97); }
+    to { opacity: 1; transform: none; }
+  }
+
+  .input {
+    margin: 0 10px 10px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    border: 1.5px solid var(--rule);
+    border-radius: 8px;
+    padding: 5px 5px 5px 10px;
+    min-height: 38px;
+    font-size: .8em;
+  }
+  .input .txt { flex: 1; min-width: 0; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .input .txt:empty:not(.typing)::before { content: "Ask the helpdesk"; color: var(--ink-3); }
+  .input .txt.typing::after {
+    content: "";
+    display: inline-block;
+    width: 2px; height: 1.05em;
+    background: var(--ink);
+    margin-left: 1px;
+    vertical-align: -2px;
+    animation: blink .8s steps(1) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+  .input .send {
+    font-family: var(--font-ui);
+    font-weight: 600;
+    font-size: .9em;
+    background: var(--ink);
+    color: var(--card);
+    border-radius: 5px;
+    padding: 4px 10px;
+    transition: transform .15s;
+  }
+  .input .send.press { transform: scale(.88); }
+
+  /* ---------- network between client and server ---------- */
+  .wire { position: relative; }
+  .lane {
+    position: absolute;
+    left: 4px; right: 4px;
+    height: 2px;
+    background: repeating-linear-gradient(90deg, var(--ink-3) 0 6px, transparent 6px 12px);
+  }
+  .lane.req { top: 30%; }
+  .lane.res { top: 70%; }
+  .lane.req::after, .lane.res::after { content: ""; position: absolute; top: -5px; border: 6px solid transparent; }
+  .lane.req::after { right: -6px; border-left: 8px solid var(--ink-3); border-right: 0; }
+  .lane.res::after { left: -6px; border-right: 8px solid var(--ink-3); border-left: 0; }
+  .lane span {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: var(--font-ui);
+    font-size: .74em;
+    color: var(--ink-3);
+    white-space: nowrap;
+  }
+  .lane.req span { bottom: 8px; }
+  .lane.res span { top: 8px; }
+  .wire-cap {
+    position: absolute;
+    left: 0; right: 0; top: 50%;
+    transform: translateY(-50%);
+    text-align: center;
+    font-family: var(--font-ui);
+    font-size: .74em;
+    color: var(--ink-3);
+  }
+
+  .packet {
+    position: absolute;
+    top: 30%;
+    width: 184px;
+    transform: translateY(-50%) scale(.9);
+    opacity: 0;
+    background: var(--card);
+    border: 1.5px solid var(--frame);
+    border-radius: 8px;
+    box-shadow: 4px 4px 0 var(--shadow);
+    padding: 7px 10px 6px;
+    font-family: var(--font-ui);
+    font-size: .74em;
+    z-index: 5;
+    left: -70px;
+    transition: left 1.15s cubic-bezier(.55, .05, .3, 1), opacity .35s, transform .35s var(--ease);
+  }
+  .packet.on { opacity: 1; transform: translateY(-50%) scale(1); }
+  .packet.at-server { left: calc(100% - 110px); }
+  .packet.instant { transition: none; }
+  .packet .ph { font-weight: 700; margin-bottom: 4px; display: flex; justify-content: space-between; }
+  .packet .ph span { color: var(--ink-2); font-weight: 400; }
+  .packet .row { display: grid; grid-template-columns: 10px 1fr auto; gap: 7px; align-items: center; padding: 1px 0; }
+  .packet .row i { width: 10px; height: 10px; border-radius: 2px; }
+  .packet .row b { font-weight: 400; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .packet .tot {
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1.5px solid var(--rule);
+    display: flex;
+    justify-content: space-between;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .err-packet {
+    position: absolute;
+    top: 70%;
+    left: calc(100% - 110px);
+    width: 170px;
+    transform: translateY(-50%);
+    opacity: 0;
+    background: var(--card);
+    border: 2px solid var(--c-danger);
+    color: var(--c-danger);
+    border-radius: 8px;
+    padding: 6px 9px;
+    font-family: var(--font-ui);
+    font-size: .74em;
+    font-weight: 600;
+    z-index: 5;
+    transition: left 1s cubic-bezier(.55, .05, .3, 1), opacity .3s;
+  }
+  .err-packet.on { opacity: 1; }
+  .err-packet.at-client { left: -60px; }
+  .err-packet.instant { transition: none; }
+
+  .stream { position: absolute; top: 70%; left: 4px; right: 4px; height: 0; opacity: 0; transition: opacity .3s; }
+  .stream.on { opacity: 1; }
+  .stream i {
+    position: absolute;
+    top: -6px;
+    width: 12px; height: 12px;
+    border-radius: 2px;
+    background: var(--c-response);
+    animation: flow 1s linear infinite;
+  }
+  .stream i:nth-child(2) { animation-delay: .25s; }
+  .stream i:nth-child(3) { animation-delay: .5s; }
+  .stream i:nth-child(4) { animation-delay: .75s; }
+  .solo {
+    position: absolute;
+    top: calc(70% - 6px);
+    left: calc(100% - 12px);
+    width: 12px; height: 12px;
+    border-radius: 2px;
+    background: var(--c-response);
+    opacity: 0;
+    z-index: 4;
+  }
+  .solo.go { animation: flow 1s linear 1 both; }
+  @keyframes flow {
+    from { left: calc(100% - 12px); opacity: 0; }
+    15% { opacity: 1; }
+    85% { opacity: 1; }
+    to { left: 0; opacity: 0; }
+  }
+
+  /* =================== server: the model =================== */
+  .srv {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) minmax(92px, auto);
+    grid-template-rows: auto minmax(0, 1fr) minmax(0, .8fr) auto auto;
+    grid-template-areas:
+      "wl   status status"
+      "win  net    out"
+      "win  tray   tray"
+      "win  cache  cache"
+      "wu   meta   meta";
+    column-gap: 14px;
+    row-gap: 8px;
+    padding: 10px 14px 10px;
+    font-family: var(--font-ui);
+  }
+  .area-label { font-weight: 600; font-size: .8em; line-height: 1.2; }
+  .area-label small { display: block; font-weight: 400; color: var(--ink-3); }
+
+  /* context window column */
+  .wl { grid-area: wl; align-self: end; }
+  /* the column keeps 14% of its height free below the window, so an overflow always has room */
+  .col {
+    grid-area: win;
+    position: relative;
+    width: clamp(92px, 7.4vw, 140px);
+  }
+  .cw-box {
+    position: absolute;
+    left: 0; right: 0; top: 0;
+    height: 86%;
+    border: 2px solid var(--frame);
+    border-radius: 6px;
+    background: var(--cell-empty);
+    transition: border-color .3s;
+  }
+  .col.over .cw-box { border-color: var(--c-danger); }
+  .wu { grid-area: wu; font-size: .76em; color: var(--ink-2); }
+  .wu b { color: var(--ink); font-size: 1.3em; font-variant-numeric: tabular-nums; }
+  .wu.over b { color: var(--c-danger); }
+
+  .seg {
+    position: absolute;
+    left: 3px; right: 3px;
+    min-height: 5px;
+    border-radius: 3px;
+    color: var(--on-color);
+    font-size: .66em;
+    font-weight: 600;
+    line-height: 1.2;
+    padding: 3px 5px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    transition:
+      height .6s var(--ease) var(--d, 0s),
+      opacity .4s var(--ease) var(--d, 0s),
+      transform .4s var(--ease) var(--d, 0s);
+  }
+  .seg.slow { transition: height var(--grow, 1.8s) linear; }
+  .seg.leave { opacity: 0; transform: translateX(26px); }
+  .seg.system { background: var(--c-system); }
+  .seg.history { background: var(--c-history); }
+  .seg.docs { background: var(--c-docs); }
+  .seg.question { background: var(--c-question); }
+  .seg.response { background: var(--c-response); }
+  .seg.room {
+    background: repeating-linear-gradient(135deg,
+      color-mix(in srgb, var(--c-response) 30%, transparent) 0 3px, transparent 3px 6px);
+    border: 1.5px dashed var(--c-response);
+    color: var(--c-response);
+  }
+  .seg { z-index: 1; }
+  .over-zone {
+    position: absolute;
+    left: 0; right: 0;
+    top: 86%;
+    height: 0;
+    border: 2px dashed var(--c-danger);
+    border-top: 0;
+    border-radius: 0 0 6px 6px;
+    background: repeating-linear-gradient(135deg,
+      color-mix(in srgb, var(--c-danger) 30%, transparent) 0 4px, transparent 4px 8px);
+    opacity: 0;
+    z-index: 0;
+    transition: opacity .4s, height .6s var(--ease);
+  }
+  .col.over .over-zone { opacity: 1; }
+
+  /* status line */
+  .status { grid-area: status; display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: .86em; align-self: end; }
+  .status i { width: 10px; height: 10px; border-radius: 50%; background: var(--ink-3); flex: none; }
+  .status.reading i { background: var(--ink); animation: beat .7s ease-in-out infinite; }
+  .status.writing i { background: var(--c-response); animation: beat .5s ease-in-out infinite; }
+  .status.error { color: var(--c-danger); }
+  .status.error i { background: var(--c-danger); }
+  .status.idle { color: var(--ink-2); font-weight: 400; }
+  .status.idle i { background: var(--accent); }
+  @keyframes beat { 50% { transform: scale(1.5); opacity: .6; } }
+
+  /* the neural network */
+  .net { grid-area: net; position: relative; min-height: 0; }
+  .net svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+  /* each layer has its own colour; the reading wave takes it, the writing pass is pink */
+  .net .n0, .net .e0, .net .lt0 { --lc: var(--l1); }
+  .net .n1, .net .e1, .net .lt1 { --lc: var(--l2); }
+  .net .n2, .net .e2, .net .lt2 { --lc: var(--l3); }
+  .net .n3, .net .e3, .net .lt3, .net .e4 { --lc: var(--l4); }
+  .net .n, .net .e { --wave: var(--lc); }
+  .net.writing .n, .net.writing .e { --wave: var(--c-response); }
+  .net .e { stroke: color-mix(in srgb, var(--lc) 22%, var(--rule)); stroke-width: 1; transition: stroke .2s, stroke-width .2s; }
+  .net .e.hot { stroke: var(--wave); stroke-width: 1.7; }
+  .net .n { fill: var(--card); stroke: color-mix(in srgb, var(--lc) 65%, var(--frame)); stroke-width: 1.8; transition: fill .2s, stroke .2s; }
+  .net .n.hot { fill: var(--wave); stroke: var(--wave); filter: drop-shadow(0 0 4px color-mix(in srgb, var(--wave) 70%, transparent)); }
+  .net .lt { font-family: var(--font-ui); font-size: 11px; font-weight: 700; fill: var(--lc); text-anchor: middle; }
+  .net .loop { fill: none; stroke: var(--rule); stroke-width: 1.5; stroke-dasharray: 4 4; transition: stroke .2s; }
+  .net .loop.hot { stroke: var(--c-response); animation: dash .5s linear infinite; }
+  .net .loop-lab { font-family: var(--font-ui); font-size: 10px; fill: var(--ink-3); text-anchor: middle; }
+  @keyframes dash { to { stroke-dashoffset: -16; } }
+  .net .ft { opacity: 0; }
+  .net.feeding .ft { animation: feed .8s linear infinite; }
+  @keyframes feed {
+    from { transform: translateX(-6px); opacity: 0; }
+    25% { opacity: 1; }
+    to { transform: translateX(46px); opacity: 0; }
+  }
+  .net.busy .n { animation: busy .24s ease-in-out infinite alternate; }
+  .net.busy .n:nth-of-type(3n) { animation-delay: .08s; }
+  .net.busy .n:nth-of-type(3n+1) { animation-delay: .16s; }
+  @keyframes busy { to { fill: var(--c-response); stroke: var(--c-response); } }
+  .net-note { position: absolute; left: 0; right: 0; bottom: -2px; text-align: center; font-size: .66em; color: var(--ink-3); }
+
+  /* output */
+  .out { grid-area: out; align-self: center; text-align: center; }
+  .outbox {
+    border: 2px solid var(--rule);
+    border-radius: 8px;
+    padding: 7px 8px 8px;
+    background: var(--card);
+    transition: border-color .3s;
+  }
+  .outbox.live { border-color: var(--c-response); }
+  .outbox small { display: block; font-size: .7em; color: var(--ink-2); }
+  .outbox b {
+    display: block;
+    min-height: 1.25em;
+    font-size: 1.45em;
+    line-height: 1.25;
+    color: var(--c-response);
+    white-space: pre;
+  }
+  .outbox b.pop { animation: pop .3s var(--ease); }
+  @keyframes pop { from { transform: scale(.6); opacity: 0; } to { transform: none; opacity: 1; } }
+
+  /* working values tray */
+  .tray { grid-area: tray; min-height: 0; display: flex; flex-direction: column; gap: 5px; }
+  .tray-head { display: flex; align-items: baseline; gap: 10px; font-size: .78em; white-space: nowrap; overflow: hidden; }
+  .tray-head b { font-weight: 600; }
+  .tray-head span { color: var(--ink-3); }
+  .tray-head .same-note { color: var(--ink); display: none; align-items: center; gap: 6px; font-weight: 600; animation: capIn .4s var(--ease) both; }
+  .tray.same .tray-head .sub { display: none; }
+  .tray-head .same-note::before { content: ""; width: 16px; height: 10px; border: 2px dashed var(--ink); border-radius: 3px; }
+  .tray.same .same-note { display: inline-flex; }
+  .tray-rows {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 50px minmax(0, 1fr);
+    grid-template-rows: repeat(4, minmax(0, 1fr));
+    row-gap: 4px;
+    column-gap: 8px;
+    border: 1.5px dashed var(--rule);
+    border-radius: 6px;
+    padding: 6px 8px;
+  }
+  .tlab { font-size: .66em; font-weight: 700; color: var(--lc); align-self: center; text-align: right; white-space: nowrap; }
+  .tlab::before {
+    content: "";
+    display: inline-block;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--lc);
+    margin-right: 5px;
+    vertical-align: 1px;
+  }
+  .tsegs { display: flex; gap: 2px; min-height: 0; border-radius: 3px; transition: box-shadow .2s; }
+  .tsegs.read { box-shadow: 0 0 0 2px var(--c-response); }
+  .tseg {
+    --k: var(--ink-3);
+    height: 100%;
+    flex: none;
+    border-radius: 2px;
+    background-color: var(--k);
+    background-image: repeating-linear-gradient(90deg, transparent 0 3px, color-mix(in srgb, var(--card) 45%, transparent) 3px 4px);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform .45s var(--ease) var(--d, 0s), width var(--wdur, .5s) linear, opacity .4s;
+  }
+  .tseg.on { transform: scaleX(1); }
+  .tseg.leave { opacity: 0; }
+  .tray.instant .tseg { transition: none; }
+  .tseg.system { --k: var(--c-system); }
+  .tseg.history { --k: var(--c-history); }
+  .tseg.question { --k: var(--c-question); }
+  .tseg.response { --k: var(--c-response); }
+  .same-wrap { grid-area: 1 / 2 / span 4 / 3; position: relative; pointer-events: none; }
+  .same-box {
+    position: absolute;
+    left: -4px; top: -4px; bottom: -4px;
+    border: 2px dashed var(--ink);
+    border-radius: 5px;
+    opacity: 0;
+    transition: opacity .5s;
+  }
+  .tray.same .same-box { opacity: 1; }
+  .tray-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: .72em; color: var(--ink-2); min-height: 1.2em; }
+  .tray-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .tray-legend i { width: 9px; height: 9px; border-radius: 2px; }
+  .tray-legend b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  /* counters */
+  .meta { grid-area: meta; display: flex; align-items: baseline; gap: 6px 20px; flex-wrap: wrap; font-size: .76em; color: var(--ink-2); }
+  .meta b { color: var(--ink); font-size: 1.45em; font-variant-numeric: tabular-nums; margin-left: 4px; }
+  .meta .memo { margin-left: auto; }
+  .meta .memo strong { color: var(--ink); }
+  .memo.flash strong { animation: memoFlash 1.2s var(--ease) 2; }
+  @keyframes memoFlash { 50% { color: var(--c-danger); } }
+
+  /* ---------- callout row under the scene ---------- */
+  .callout { grid-column: 1 / -1; position: relative; min-height: 60px; }
+  .callout > div { position: absolute; inset: 0; display: flex; align-items: center; gap: 18px; }
+  .callout .big {
+    font-family: var(--font-ui);
+    font-weight: 700;
+    font-size: clamp(19px, 1.6vw, 29px);
+    line-height: 1.15;
+  }
+  .callout .small { color: var(--ink-2); font-size: .9em; max-width: 60em; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  .chip {
+    font-family: var(--font-ui);
+    font-size: .9em;
+    padding: 2px 8px 3px;
+    border-radius: 4px;
+    border: 1.5px solid var(--c-question);
+    background: color-mix(in srgb, var(--c-question) 14%, var(--card));
+    white-space: pre;
+  }
+  .chip:nth-child(even) { background: var(--card); }
+  .callout .eq { font-family: var(--font-ui); color: var(--ink-2); }
+  .callout .eq b { color: var(--ink); }
+
+  /* =================== chart layer (last step) =================== */
+  .chart {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    gap: 12px;
+    font-family: var(--font-ui);
+  }
+  .chart-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px 24px; flex-wrap: wrap; }
+  .chart-head h2 { margin: 0; font-size: 1.25em; }
+  .chart-key { display: flex; gap: 18px; font-size: .82em; color: var(--ink-2); flex-wrap: wrap; }
+  .chart-key span { display: inline-flex; align-items: center; gap: 7px; }
+  .chart-key i { width: 14px; height: 14px; border-radius: 2px; }
+  .hatch {
+    background: repeating-linear-gradient(135deg, var(--ink-3) 0 3px, color-mix(in srgb, var(--ink-3) 35%, transparent) 3px 6px);
+  }
+  .plot { position: relative; min-height: 0; margin-left: 44px; border-left: 1.5px solid var(--frame); border-bottom: 1.5px solid var(--frame); }
+  .gridline { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--rule); }
+  .gridline span { position: absolute; right: calc(100% + 8px); top: -.65em; font-size: .72em; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .bars { position: absolute; inset: 0 6px 0 6px; display: flex; align-items: flex-end; gap: 5px; }
+  .bar {
+    flex: 1;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    transform: scaleY(0);
+    transform-origin: bottom;
+    transition: transform .55s var(--ease) calc(var(--i) * 45ms + .15s);
+  }
+  .chart.is-on .bar { transform: scaleY(1); }
+  .bar .new { background: var(--c-question); border-radius: 2px 2px 0 0; }
+  .xaxis { margin-left: 50px; margin-right: 6px; display: flex; gap: 5px; font-size: .72em; color: var(--ink-3); }
+  .xaxis span { flex: 1; text-align: center; font-variant-numeric: tabular-nums; }
+  .totals { display: flex; gap: 16px 40px; align-items: flex-end; flex-wrap: wrap; border-top: 1.5px solid var(--rule); padding-top: 12px; }
+  .totals .t b { display: block; font-size: clamp(26px, 2.4vw, 42px); line-height: 1; font-variant-numeric: tabular-nums; }
+  .totals .t span { font-size: .82em; color: var(--ink-2); }
+  .totals .t.alt b { color: var(--ink-2); }
+  .totals .foot { margin-left: auto; font-size: .76em; color: var(--ink-3); max-width: 22em; font-family: var(--font-text); }
+
+  /* =================== page 02: prompt caching =================== */
+
+  /* text served from cache: outlined in the cache colour */
+  .seg.hit { box-shadow: inset 0 0 0 2.5px var(--c-cache); }
+  .seg.date { background: var(--c-danger); }
+  .tseg.date { --k: var(--c-danger); }
+  .tseg.docs { --k: var(--c-docs); }
+  .tseg.cached { box-shadow: 0 0 0 2px var(--c-cache); }
+  .tseg.fromcache { animation: fromCache 1s var(--ease); }
+  @keyframes fromCache {
+    0% { transform: translateY(30px) scaleX(1); opacity: 0; }
+    60% { opacity: 1; }
+    100% { transform: none; }
+  }
+
+  /* the prompt cache: kept between requests */
+  .cache {
+    grid-area: cache;
+    border: 2px dashed color-mix(in srgb, var(--c-cache) 55%, var(--rule));
+    border-radius: 8px;
+    padding: 6px 10px 8px;
+    display: grid;
+    gap: 5px;
+    transition: border-color .3s, background .3s;
+  }
+  .cache.has { border-style: solid; border-color: var(--c-cache); background: color-mix(in srgb, var(--c-cache) 7%, transparent); }
+  .cache-head { display: flex; align-items: baseline; gap: 10px; font-size: .78em; white-space: nowrap; overflow: hidden; }
+  .cache-head b { color: var(--c-cache); font-weight: 700; }
+  .cache-head span { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; }
+  .cache-head .cache-flag, .cache-head .ttl, .cache-head b { flex: none; }
+  .cache-head .ttl { margin-left: auto; color: var(--ink); font-weight: 700; font-variant-numeric: tabular-nums; }
+  .cache-head .ttl.low { color: var(--c-danger); }
+  .cache-bar { display: flex; gap: 2px; height: 16px; }
+  .cseg {
+    --k: var(--ink-3);
+    height: 100%;
+    border-radius: 2px;
+    background-color: var(--k);
+    background-image: repeating-linear-gradient(90deg, transparent 0 3px, color-mix(in srgb, var(--card) 45%, transparent) 3px 4px);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform .6s var(--ease) var(--d, 0s), opacity .5s;
+  }
+  .cseg.on { transform: scaleX(1); }
+  .cseg.instant { transition: none; }
+  .cseg.leave { opacity: 0; }
+  .cseg.system { --k: var(--c-system); }
+  .cseg.docs { --k: var(--c-docs); }
+  .cseg.history { --k: var(--c-history); }
+  .cseg.question { --k: var(--c-question); }
+  .cseg.date { --k: var(--c-danger); }
+  .cache.hit { animation: cacheHit 1.1s var(--ease); }
+  @keyframes cacheHit { 40% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--c-cache) 35%, transparent); } }
+  .cache.miss { animation: cacheMiss .7s var(--ease); border-color: var(--c-danger); }
+  @keyframes cacheMiss {
+    20% { transform: translateX(-5px); }
+    40% { transform: translateX(4px); }
+    60% { transform: translateX(-3px); }
+    80% { transform: translateX(2px); }
+  }
+  .cache-flag {
+    font-size: .74em;
+    font-weight: 700;
+    border-radius: 999px;
+    padding: 0 8px 1px;
+    opacity: 0;
+    transition: opacity .3s;
+  }
+  .cache-flag.on { opacity: 1; }
+  .cache-flag.hit { color: var(--on-color); background: var(--c-cache); }
+  .cache-flag.miss { color: #fff; background: var(--c-danger); }
+  .cache-flag.write { color: var(--c-cache); border: 1.5px solid var(--c-cache); }
+
+  /* billing line */
+  .meta .bill b { color: var(--c-cache); }
+  .meta .bill small { color: var(--ink-3); margin-left: 4px; }
+
+  /* the cache marker inside a request packet */
+  .packet .mk {
+    margin: 3px 0;
+    border-top: 2px dashed var(--c-cache);
+    color: var(--c-cache);
+    font-size: .86em;
+    font-weight: 700;
+    padding-top: 1px;
+  }
+  .packet .row.d i { background: var(--c-danger); }
+
+  /* the app's stable beginning, in the client */
+  .sys-chip .policy { color: var(--c-docs); font-weight: 600; }
+
+  /* clock shown while time passes */
+  .clock {
+    position: absolute;
+    left: 36%; top: 42%;
+    transform: translate(-50%, -50%) scale(.9);
+    z-index: 6;
+    background: var(--card);
+    border: 2px solid var(--c-cache);
+    border-radius: 12px;
+    padding: 10px 18px;
+    text-align: center;
+    font-family: var(--font-ui);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .3s, transform .3s var(--ease);
+  }
+  .clock.on { opacity: 1; transform: translate(-50%, -50%); }
+  .clock b { display: block; font-size: 1.8em; font-variant-numeric: tabular-nums; }
+  .clock span { font-size: .8em; color: var(--ink-2); }
+
+  /* =================== explainer layers =================== */
+  .explain {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    gap: 18px;
+    font-family: var(--font-ui);
+  }
+  .explain h2 { margin: 0; font-size: 1.3em; }
+  .explain .lead { margin: 4px 0 0; font-family: var(--font-text); color: var(--ink-2); max-width: 54em; }
+  .explain .foot { font-size: .78em; color: var(--ink-3); font-family: var(--font-text); }
+
+  .reqs { display: grid; gap: 26px; align-content: center; }
+  .req { display: grid; grid-template-columns: 9.5em minmax(0, 1fr); gap: 16px; align-items: center; }
+  .req-name { font-weight: 700; }
+  .req-name small { display: block; font-weight: 400; color: var(--ink-2); font-size: .82em; }
+  .rbar { position: relative; display: flex; gap: 2px; height: 48px; }
+  .rbar > span {
+    height: 100%;
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    font-size: .78em;
+    font-weight: 600;
+    color: var(--on-color);
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .rbar .system { background: var(--c-system); }
+  .rbar .docs { background: var(--c-docs); }
+  .rbar .history { background: var(--c-history); }
+  .rbar .question { background: var(--c-question); }
+  .rbar .date { background: var(--c-danger); color: #fff; }
+  .rbar .tools { background: var(--c-tools); }
+  .rbar .cachedpart { box-shadow: inset 0 0 0 3px var(--c-cache); }
+  .rbar .missed { opacity: .45; }
+  .rbar > .marker {
+    overflow: visible;
+    position: absolute;
+    top: -12px; bottom: -12px;
+    width: 0;
+    border-left: 3px dashed var(--c-cache);
+    padding: 0;
+  }
+  .rbar .marker::after {
+    content: "cache marker";
+    position: absolute;
+    top: -18px; left: -40px;
+    width: 80px;
+    text-align: center;
+    font-size: .72em;
+    font-weight: 700;
+    color: var(--c-cache);
+  }
+  .verdict { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; margin-top: 8px; font-size: .9em; }
+  .verdict.ok { color: var(--c-cache); }
+  .verdict.bad { color: var(--c-danger); }
+  .brace { display: flex; gap: 2px; margin-top: 6px; font-size: .76em; color: var(--ink-2); }
+  .brace span { border-top: 2px solid currentColor; padding-top: 3px; text-align: center; }
+  .brace .c { color: var(--c-cache); }
+  .brace .n { color: var(--ink-2); }
+
+  .rule-list { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: .9em; }
+  .rule-list .tk { background: var(--card); border: 1.5px solid var(--rule); border-radius: 6px; padding: 3px 9px; }
+  .rule-list .arrow { color: var(--ink-3); }
+
+  /* price table */
+  .prices { width: 100%; border-collapse: collapse; font-size: .92em; align-self: center; }
+  .prices th, .prices td { text-align: left; padding: 12px 14px; border-bottom: 1.5px solid var(--rule); vertical-align: top; }
+  .prices th { font-size: .8em; color: var(--ink-2); font-weight: 600; }
+  .prices td:first-child { font-weight: 700; white-space: nowrap; }
+  .prices td b { color: var(--c-cache); }
+  .prices td small { display: block; color: var(--ink-3); font-family: var(--font-text); margin-top: 2px; }
+
+  /* the 20-question chart reuses page 01's chart styles */
+  .bar-c .cachepart { background: color-mix(in srgb, var(--c-cache) 75%, var(--card)); }
+
+  /* =================== page 04: where CAG stops working =================== */
+  :root { --c-doc2: color-mix(in srgb, var(--c-docs) 70%, var(--c-danger)); --c-doc3: color-mix(in srgb, var(--c-docs) 70%, #ffffff); }
+  .seg.doc1 { background: var(--c-docs); }
+  .seg.doc2 { background: var(--c-doc2); }
+  .seg.doc3 { background: var(--c-doc3); }
+  .seg.doc4 { background: color-mix(in srgb, var(--c-docs) 55%, var(--c-system)); }
+  .seg.doc5 { background: color-mix(in srgb, var(--c-docs) 55%, var(--c-history)); }
+  .tseg.doc1, .cseg.doc1 { --k: var(--c-docs); }
+  .tseg.doc2, .cseg.doc2 { --k: var(--c-doc2); }
+  .tseg.doc3, .cseg.doc3 { --k: var(--c-doc3); }
+  .tseg.doc4, .cseg.doc4 { --k: color-mix(in srgb, var(--c-docs) 55%, var(--c-system)); }
+  .tseg.doc5, .cseg.doc5 { --k: color-mix(in srgb, var(--c-docs) 55%, var(--c-history)); }
+
+  .kb {
+    margin: 9px 10px 0;
+    padding: 8px 10px;
+    border: 1.5px solid color-mix(in srgb, var(--p-cag) 55%, var(--rule));
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--p-cag) 7%, transparent);
+    font-family: var(--font-ui);
+    font-size: .78em;
+    display: grid;
+    gap: 3px;
+  }
+  .kb-head { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 2px; }
+  .kb-head b { color: var(--p-cag); }
+  .kb-head span { color: var(--ink-2); }
+  .kb-doc { display: grid; grid-template-columns: 10px 1fr auto; gap: 7px; align-items: center; transition: background .3s; border-radius: 4px; }
+  .kb-doc i { width: 10px; height: 13px; border-radius: 2px; }
+  .kb-doc b { font-weight: 400; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .kb-doc.new { animation: kbNew 1.2s var(--ease) 2; }
+  @keyframes kbNew { 50% { background: color-mix(in srgb, var(--c-danger) 25%, transparent); } }
+  .kb-doc.changed b::after { content: " updated"; color: var(--c-danger); font-weight: 700; }
+
+  .cards5 { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; align-content: center; }
+  .pcard {
+    border: 1.5px solid color-mix(in srgb, var(--c-danger) 45%, var(--rule));
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--c-danger) 5%, var(--sheet));
+    padding: 14px 14px 16px;
+    display: grid;
+    gap: 6px;
+    align-content: start;
+  }
+  .pcard .num-badge {
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    display: grid; place-items: center;
+    background: var(--c-danger);
+    color: #fff;
+    font-weight: 700;
+  }
+  .pcard b { font-size: 1.05em; }
+  .pcard span { font-family: var(--font-text); color: var(--ink-2); font-size: .9em; }
+
+  .big-num { display: flex; gap: 36px; align-items: flex-end; flex-wrap: wrap; align-content: center; }
+  .big-num .t b { display: block; font-size: clamp(32px, 3vw, 54px); line-height: 1; font-variant-numeric: tabular-nums; }
+  .big-num .t span { color: var(--ink-2); font-size: .9em; }
+  .big-num .t.warn b { color: var(--c-danger); }
+
+  .curve { width: 100%; max-height: 100%; }
+  .curve .axis { stroke: var(--frame); stroke-width: 1.5; }
+  .curve .grid { stroke: var(--rule); stroke-dasharray: 3 4; }
+  .curve .line { fill: none; stroke: var(--p-cag); stroke-width: 4; stroke-linecap: round; stroke-dasharray: 900; stroke-dashoffset: 900; transition: stroke-dashoffset 1.6s var(--ease) .2s; }
+  .is-on .curve .line { stroke-dashoffset: 0; }
+  .curve .dip { fill: color-mix(in srgb, var(--c-danger) 18%, transparent); }
+  .curve text { font-family: var(--font-ui); font-size: 12px; fill: var(--ink-2); }
+  .curve .lbl-strong { fill: var(--ink); font-weight: 700; }
+  .curve .lbl-red { fill: var(--c-danger); font-weight: 700; }
+
+  .scale-bars { display: grid; gap: 14px; align-content: center; }
+  .sb-row { display: grid; grid-template-columns: 9em minmax(0, 1fr) 8em; gap: 14px; align-items: center; }
+  .sb-row .k { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .sb-row .k small { display: block; font-weight: 400; color: var(--ink-2); font-size: .8em; }
+  .sb-row .v { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .sb-bar { height: 26px; border-radius: 4px; background: var(--p-cag); transform-origin: left; transform: scaleX(0); transition: transform .8s var(--ease) var(--delay, 0s); }
+  .is-on .sb-bar { transform: scaleX(1); }
+
+  .audience { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; align-content: center; }
+  .who {
+    border: 1.5px solid var(--rule);
+    border-radius: 10px;
+    padding: 14px 16px;
+    background: var(--sheet);
+    display: grid;
+    gap: 10px;
+  }
+  .who-head { display: flex; align-items: center; gap: 10px; font-weight: 700; }
+  .who-head i { width: 30px; height: 30px; border-radius: 50%; background: var(--c-history); position: relative; }
+  .who-head i::after { content: ""; position: absolute; left: 9px; top: 5px; width: 12px; height: 12px; border-radius: 50%; background: var(--sheet); }
+  .who-head small { font-weight: 400; color: var(--ink-2); }
+  .doc-stack { display: grid; gap: 4px; font-size: .86em; }
+  .doc-stack span { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border-radius: 4px; background: color-mix(in srgb, var(--c-docs) 14%, var(--card)); }
+  .doc-stack span.secret { background: color-mix(in srgb, var(--c-danger) 18%, var(--card)); color: var(--ink); font-weight: 700; outline: 2px solid var(--c-danger); }
+
+  .fit { width: 100%; border-collapse: collapse; align-self: center; font-size: .95em; }
+  .fit th { text-align: left; padding: 10px 14px; font-size: .85em; color: var(--ink-2); border-bottom: 1.5px solid var(--rule); }
+  .fit td { padding: 11px 14px; border-bottom: 1.5px solid var(--rule); vertical-align: top; }
+  .fit td:first-child { font-weight: 700; white-space: nowrap; }
+  .fit .yes { color: var(--p-cag); font-weight: 700; }
+  .fit .no { color: var(--c-danger); font-weight: 700; }
+  .source { font-family: var(--font-text); font-size: .8em; color: var(--ink-3); font-weight: 400; }
+</style>
+</head>
+<body data-prev="03-cag.html" data-next="05-rag-build.html" data-topic="04">
+<div class="deck">
+  <header class="topbar">
+    <span class="sec">04</span>
+    <span class="name">Where CAG stops working</span>
+    <span class="spacer"></span>
+    <a href="index.html">Agenda</a>
+  </header>
+
+  <main class="layout tl">
+    <aside class="tl-col">
+      <div class="tl-head">
+        <h1>Where CAG stops working</h1>
+        <p class="sub">Five limits, and the step to retrieval.</p>
+      </div>
+      <ol id="timeline" class="timeline"></ol>
+    </aside>
+
+    <section class="stage" aria-label="Animation">
+
+      <!-- =========== 0: overview =========== -->
+      <div class="layer explain" data-show="0">
+        <div>
+          <h2>CAG works until one of these happens</h2>
+          <p class="lead">Each limit comes from the same design choice: every request carries the whole knowledge base.</p>
+        </div>
+        <div class="cards5">
+          <div class="pcard" data-show="0" data-anim="up"><span class="num-badge">1</span><b>Too big</b><span>The knowledge no longer fits in the window.</span></div>
+          <div class="pcard" data-show="0" data-anim="up" style="--delay:.1s"><span class="num-badge">2</span><b>Changes often</b><span>Every edit invalidates the cache from that point on.</span></div>
+          <div class="pcard" data-show="0" data-anim="up" style="--delay:.2s"><span class="num-badge">3</span><b>Lost in a long window</b><span>Details buried in the middle are used less reliably.</span></div>
+          <div class="pcard" data-show="0" data-anim="up" style="--delay:.3s"><span class="num-badge">4</span><b>Every question pays for all of it</b><span>Cheaper per token is still per token.</span></div>
+          <div class="pcard" data-show="0" data-anim="up" style="--delay:.4s"><span class="num-badge">5</span><b>Everyone sees everything</b><span>No way to show a document to some users and not others.</span></div>
+        </div>
+      </div>
+
+      <!-- =========== client, network, server (steps 1 and 3) =========== -->
+      <div class="scene" data-show="1,3">
+        <div class="box client">
+          <div class="box-head"><b>Helpdesk app</b><span>the client</span></div>
+          <div class="sys-chip" id="sys-chip"><span class="sq"></span><b>System prompt</b> added by the app</div>
+          <div class="kb" id="kb">
+            <div class="kb-head"><b>Knowledge base</b><span class="num" id="kb-total">24,000 tokens</span></div>
+            <div class="kb-doc" id="kb-d1"><i style="background:var(--c-docs)"></i>Leave policy<b>6,000</b></div>
+            <div class="kb-doc"><i style="background:var(--c-doc2)"></i>Expenses policy<b>8,000</b></div>
+            <div class="kb-doc"><i style="background:var(--c-doc3)"></i>IT handbook<b>10,000</b></div>
+            <div class="kb-doc" id="kb-d4" data-show="1"><i style="background:color-mix(in srgb, var(--c-docs) 55%, var(--c-system))"></i>Benefits guide<b>9,000</b></div>
+            <div class="kb-doc" id="kb-d5" data-show="1"><i style="background:color-mix(in srgb, var(--c-docs) 55%, var(--c-history))"></i>Security policy<b>6,000</b></div>
+          </div>
+          <div class="chat" id="chat"></div>
+          <div class="input"><span class="txt" id="typed"></span><span class="send" id="send">Send</span></div>
+        </div>
+
+        <div class="wire">
+          <div class="lane req"><span>request</span></div>
+          <div class="wire-cap">internet</div>
+          <div class="lane res"><span>response</span></div>
+          <div class="packet" id="packet"></div>
+          <div class="stream" id="stream"><i></i><i></i><i></i><i></i></div>
+          <i class="solo" id="solo"></i>
+        </div>
+
+        <div class="box server">
+          <div class="box-head"><b>Model</b><span>on the provider's servers</span></div>
+          <div class="srv">
+            <div class="area-label wl">Context window<small>the text it sees</small></div>
+            <div class="col" id="cw"><div class="cw-box"></div><div class="over-zone" id="over-zone"></div></div>
+            <div class="wu" id="wu"><b id="used" class="num">0</b> of 32,000<br>tokens (demo)</div>
+            <div class="status idle" id="status"><i></i><span>Waiting</span></div>
+            <div class="net" id="net"><svg id="net-svg" viewBox="0 0 330 205" preserveAspectRatio="xMidYMid meet" aria-label="Neural network with four layers"></svg></div>
+            <div class="out"><div class="outbox" id="outbox"><small>Next token</small><b id="out-tok"></b></div></div>
+            <div class="tray" id="tray">
+              <div class="tray-head"><b>Working values</b><span class="sub">kept in memory</span></div>
+              <div class="tray-rows">
+                <div class="tlab" style="grid-area:1/1;--lc:var(--l1)">Layer 1</div><div class="tsegs" style="grid-area:1/2"></div>
+                <div class="tlab" style="grid-area:2/1;--lc:var(--l2)">Layer 2</div><div class="tsegs" style="grid-area:2/2"></div>
+                <div class="tlab" style="grid-area:3/1;--lc:var(--l3)">Layer 3</div><div class="tsegs" style="grid-area:3/2"></div>
+                <div class="tlab" style="grid-area:4/1;--lc:var(--l4)">Layer 4</div><div class="tsegs" style="grid-area:4/2"></div>
+              </div>
+              <div class="tray-legend" id="tray-legend"></div>
+            </div>
+            <div class="cache" id="cache">
+              <div class="cache-head"><b>Prompt cache</b><span id="cache-note">empty</span><span class="cache-flag" id="cache-flag"></span><span class="ttl" id="ttl"></span></div>
+              <div class="cache-bar" id="cache-bar"></div>
+            </div>
+            <div class="meta">
+              <span>Through the network <b id="c-net" class="num">0</b></span>
+              <span>From cache <b id="c-cache" class="num">0</b></span>
+              <span class="bill">Billed as <b id="c-bill" class="num">0</b> tokens<small id="c-base"></small></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="callout">
+          <div data-show="1"><span class="big num mark">Needs 39,500 tokens. The window holds 32,000.</span><span class="small">Two more documents, and the knowledge no longer fits.</span></div>
+          <div data-show="3"><span class="big mark">One edit, and everything after it is read and cached again.</span><span class="small">Billed as 30,625 tokens, the same as the first load.</span></div>
+        </div>
+      </div>
+
+      <!-- =========== 2: real sizes =========== -->
+      <div class="layer explain" data-show="2">
+        <div>
+          <h2>Real windows are bigger. So is real knowledge.</h2>
+          <p class="lead">The largest models today read around a million tokens. A company's knowledge is usually measured in many millions, and it keeps growing.</p>
+        </div>
+        <div class="big-num">
+          <div class="t"><b class="num">~600,000</b><span>tokens in 1,000 pages of documents<br>(about 450 words a page)</span></div>
+          <div class="t"><b class="num">~1,000,000</b><span>tokens in the largest context windows</span></div>
+          <div class="t warn"><b>Many millions</b><span>tokens in a wiki, ticket history,<br>contracts and product docs</span></div>
+        </div>
+        <div class="foot">Estimates use the rule of thumb from page 01: 1,000 tokens is about 750 English words. Other languages, code and tables use more tokens per word.</div>
+      </div>
+
+      <!-- =========== 4: lost in a long window =========== -->
+      <div class="layer explain" data-show="4">
+        <div>
+          <h2>Lost in a long window</h2>
+          <p class="lead">Fitting is not the same as being used well. Models find information at the start and end of a long input more reliably than in the middle.</p>
+        </div>
+        <svg class="curve" viewBox="0 0 640 270" preserveAspectRatio="xMidYMid meet" aria-label="Accuracy is highest when the relevant fact is at the start or end of the input, and lowest in the middle">
+          <rect class="dip" x="190" y="20" width="260" height="200" rx="6"/>
+          <line class="grid" x1="60" y1="70" x2="610" y2="70"/>
+          <line class="grid" x1="60" y1="140" x2="610" y2="140"/>
+          <line class="axis" x1="60" y1="20" x2="60" y2="220"/>
+          <line class="axis" x1="60" y1="220" x2="610" y2="220"/>
+          <path class="line" d="M 80 48 C 170 120, 220 178, 320 182 S 470 150, 590 66"/>
+          <text x="52" y="30" text-anchor="end">higher</text>
+          <text x="52" y="218" text-anchor="end">lower</text>
+          <text x="20" y="125" transform="rotate(-90 20 125)" text-anchor="middle">answer accuracy</text>
+          <text class="lbl-strong" x="80" y="246">Fact near the start</text>
+          <text class="lbl-red" x="320" y="246" text-anchor="middle">Fact in the middle</text>
+          <text class="lbl-strong" x="600" y="246" text-anchor="end">Fact near the end</text>
+        </svg>
+        <div class="source">Illustrative shape of the finding in "Lost in the Middle" (Liu et al., TACL 2024): accuracy is highest when the relevant document is at the beginning or end of the input, and drops when it sits in the middle. Later studies report accuracy falling as inputs grow, even on simple tasks: in NoLiMa (ICML 2025), 11 of 13 long-context models scored below half their short-input level at 32,000 tokens.</div>
+      </div>
+
+      <!-- =========== 5: every question pays =========== -->
+      <div class="layer explain" data-show="5">
+        <div>
+          <h2>Every question pays for all of it</h2>
+          <p class="lead">Even read from the cache at a tenth of the price, the whole knowledge base is billed again on every question. The bill grows with the knowledge, not with the question.</p>
+        </div>
+        <div class="scale-bars">
+          <div class="sb-row"><div class="k">25,000<small>tokens of knowledge</small></div><div><div class="sb-bar" style="width:2.8%"></div></div><div class="v num">2,500</div></div>
+          <div class="sb-row"><div class="k">100,000<small>tokens of knowledge</small></div><div><div class="sb-bar" style="width:11.1%;--delay:.1s"></div></div><div class="v num">10,000</div></div>
+          <div class="sb-row"><div class="k">250,000<small>tokens of knowledge</small></div><div><div class="sb-bar" style="width:27.8%;--delay:.2s"></div></div><div class="v num">25,000</div></div>
+          <div class="sb-row"><div class="k">500,000<small>tokens of knowledge</small></div><div><div class="sb-bar" style="width:55.6%;--delay:.3s"></div></div><div class="v num">50,000</div></div>
+          <div class="sb-row"><div class="k">900,000<small>tokens of knowledge</small></div><div><div class="sb-bar" style="width:100%;--delay:.4s"></div></div><div class="v num">90,000</div></div>
+        </div>
+        <div class="foot">Billed input per question, in tokens, with the knowledge read from the cache at 0.1×. The question itself adds only a few dozen tokens. A bigger window also means more work before the first token of every answer.</div>
+      </div>
+
+      <!-- =========== 6: everyone sees everything =========== -->
+      <div class="layer explain" data-show="6">
+        <div>
+          <h2>Everyone sees everything</h2>
+          <p class="lead">With CAG, the same knowledge goes into every request, whoever is asking. A document in the window can end up in any answer.</p>
+        </div>
+        <div class="audience">
+          <div class="who" data-show="6" data-anim="up">
+            <div class="who-head"><i></i>An employee<small>should not see salary bands</small></div>
+            <div class="doc-stack"><span>Leave policy</span><span>Expenses policy</span><span>IT handbook</span><span class="secret">Salary bands (HR only)</span></div>
+          </div>
+          <div class="who" data-show="6" data-anim="up" style="--delay:.2s">
+            <div class="who-head"><i style="background:var(--c-system)"></i>An HR manager<small>may see everything</small></div>
+            <div class="doc-stack"><span>Leave policy</span><span>Expenses policy</span><span>IT handbook</span><span class="secret">Salary bands (HR only)</span></div>
+          </div>
+        </div>
+        <div class="foot">Hiding a document from some users means a separate knowledge set and cache per audience, which multiplies the cost. Telling the model "don't reveal this" is not access control.</div>
+      </div>
+
+      <!-- =========== 7: when CAG fits =========== -->
+      <div class="layer explain" data-show="7">
+        <div>
+          <h2>When CAG fits, and when to move on</h2>
+          <p class="lead">If any answer on the right is yes, load less: fetch only the passages each question needs. That is retrieval-augmented generation.</p>
+        </div>
+        <table class="fit">
+          <thead><tr><th></th><th>CAG fits well</th><th>Time for retrieval</th></tr></thead>
+          <tbody>
+            <tr><td>Size</td><td class="yes">Fits comfortably, with room for the conversation</td><td class="no">Larger than the window, or close to it</td></tr>
+            <tr><td>Change</td><td class="yes">Stable, updated in occasional batches</td><td class="no">Edited daily, or new documents all the time</td></tr>
+            <tr><td>Audience</td><td class="yes">The same knowledge for every user</td><td class="no">Different users may see different documents</td></tr>
+            <tr><td>Precision</td><td class="yes">Answers draw on broad, well-structured material</td><td class="no">Small facts buried deep in very long material</td></tr>
+            <tr><td>Volume</td><td class="yes">Many questions against the same knowledge</td><td class="no">Huge knowledge, few questions per document</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+    </section>
+  </main>
+</div>
+
+<script src="assets/session.js?v=7"></script>
+<script src="assets/deck.js?v=6"></script>
+<script src="assets/model-scene.js?v=4"></script>
+<script>
+(function () {
+  const T = Deck.timeline();
+  const M = ModelScene({
+    limit: 32000,
+    trayScale: 41000,
+    timeline: T,
+    kinds: {
+      system:   { name: "System prompt",   color: "var(--c-system)" },
+      doc1:     { name: "Leave policy",    color: "var(--c-docs)" },
+      doc2:     { name: "Expenses policy", color: "var(--c-doc2)" },
+      doc3:     { name: "IT handbook",     color: "var(--c-doc3)" },
+      doc4:     { name: "Benefits guide",  color: "color-mix(in srgb, var(--c-docs) 55%, var(--c-system))" },
+      doc5:     { name: "Security policy", color: "color-mix(in srgb, var(--c-docs) 55%, var(--c-history))" },
+      question: { name: "New question",    color: "var(--c-question)" },
+      response: { name: "Answer",          color: "var(--c-response)" },
+    },
+  });
+  const { tag } = M;
+
+  const KNOW = [["system", 500], ["doc1", 6000], ["doc2", 8000], ["doc3", 10000]];
+  const PRE = { rows: KNOW, mark: 4 };
+  const BIG = { rows: [...KNOW, ["doc4", 9000], ["doc5", 6000]], mark: 6 };
+
+  const loaded = { win: tag(PRE), tray: tag(PRE, 0, 4), cache: KNOW, ttl: "kept for 5:00", status: ["idle", "Knowledge loaded and cached"] };
+  const S = [];
+  S[0] = loaded;
+  S[1] = { win: tag(BIG), status: ["error", "Rejected: 39,500 tokens, the window holds 32,000"] };
+  S[2] = loaded;
+  S[3] = { ...loaded, flag: "write", n: [24500, 0, 30625, 24500], status: ["idle", "Leave policy changed: all 24,500 tokens read and cached again"] };
+  S[4] = S[5] = S[6] = S[7] = S[3];
+
+  const kb = document.getElementById("kb"), kbTotal = document.getElementById("kb-total");
+  const d1 = document.getElementById("kb-d1"), d4 = document.getElementById("kb-d4"), d5 = document.getElementById("kb-d5");
+
+  function settle(step) {
+    M.settle(S[step], step);
+    kbTotal.textContent = step === 1 ? "39,000 tokens" : "24,000 tokens";
+    d1.classList.toggle("changed", step >= 3);
+    [d1, d4, d5].forEach((d) => d.classList.remove("new"));
+  }
+
+  const PLAY = {
+    1() {
+      M.setWin([], "instant");
+      M.trayClear();
+      M.cacheSet([], false);
+      M.setTTL("");
+      [d4, d5].forEach((d) => d.classList.add("new"));
+      kbTotal.textContent = "39,000 tokens";
+      M.sendRequest(BIG, 600, () => {
+        M.setWin(tag(BIG), "fill");
+        M.setStatus(["reading", "Loading 39,500 tokens"]);
+        T.at(1300, () => M.setStatus(S[1].status));
+      }, { title: "Preload" });
+    },
+    3() {
+      d1.classList.add("changed", "new");
+      M.cacheFlash("miss");
+      M.setFlag("miss");
+      T.at(700, () => { M.cacheExpire("leave policy changed"); M.wipeWin(); M.trayWipe(); });
+      M.sendRequest(PRE, 1400, () => {
+        M.setWin(tag(PRE), "fill");
+        M.runReading(PRE, { write: 4, n: S[3].n, start: 400, statusEnd: S[3].status, flagMiss: false });
+      }, { title: "Preload" });
+    },
+  };
+
+  function render(step, prev) {
+    T.clear();
+    const forward = prev === step - 1 && !Deck.reduced();
+    if (!forward || !PLAY[step]) return settle(step);
+    settle(prev);
+    PLAY[step]();
+  }
+
+  Deck.init({
+    render,
+    groupColors: {
+      "The limits": "var(--c-danger)",
+      "Next": "var(--p-rag)",
+    },
+    steps: [
+      {
+        title: "Five ways CAG breaks",
+        body: `<p>All five come from one design choice: <strong>every request carries the whole knowledge base</strong>.</p>`,
+        notes: `<ul><li>Quick overview, then one step per limit. CAG isn't wrong; it has a range where it works.</li></ul>`,
+      },
+      {
+        group: "The limits",
+        title: "1. Too big for the window",
+        body: `<p>Two more documents, and the knowledge needs <strong>39,500 tokens</strong>. The window holds 32,000, so the request is rejected before anything is read.</p>`,
+        notes: `<ul><li>Same overflow as page 01, but now caused by the knowledge itself, not by a long chat.</li></ul>`,
+      },
+      {
+        group: "The limits",
+        title: "Real windows are bigger. So is real knowledge.",
+        body: `<p>The largest windows hold around a million tokens. A thousand pages of documents is already about 600,000, and company knowledge runs to many millions.</p>`,
+        notes: `<ul><li>Rough arithmetic, not a measurement: 1,000 pages × 450 words ≈ 450,000 words ≈ 600,000 tokens.</li></ul>`,
+      },
+      {
+        group: "The limits",
+        title: "2. Knowledge changes",
+        body: `<p>The leave policy is updated. It sits near the start, so every token after it gets different working values: <strong>the whole cache is rebuilt</strong>, at the full loading price.</p>`,
+        notes: `<ul>
+          <li>Same rule as page 02: one changed token invalidates everything after it.</li>
+          <li>Edits several times a day mean paying the loading cost several times a day, and answers can be stale until the reload.</li></ul>`,
+      },
+      {
+        group: "The limits",
+        title: "3. Lost in a long window",
+        body: `<p>Fitting is not the same as being used well. Facts in the middle of a long input are found <strong>less reliably</strong> than facts at the start or end.</p>`,
+        notes: `<ul>
+          <li>Liu et al., "Lost in the Middle" (TACL 2024): best accuracy when the relevant document is first or last, a dip in the middle.</li>
+          <li>NoLiMa (ICML 2025): at 32,000 tokens, 11 of 13 long-context models fell below half of their short-input scores.</li>
+          <li>The curve on screen is the shape of the finding, not a reproduction of their numbers.</li></ul>`,
+      },
+      {
+        group: "The limits",
+        title: "4. Every question pays for all of it",
+        body: `<p>At 900,000 tokens of knowledge, each question is billed as about <strong>90,000 tokens</strong> even with a perfect cache hit.</p>`,
+        notes: `<ul><li>Caching cuts the price per token, not the number of tokens. Time to first token also grows with the window.</li></ul>`,
+      },
+      {
+        group: "The limits",
+        title: "5. Everyone sees everything",
+        body: `<p>The same knowledge goes to every user. A document in the window can end up in any answer, so <strong>permissions need separate knowledge sets</strong>, one per audience.</p>`,
+        notes: `<ul><li>"Don't reveal this" in the system prompt is not access control. If a user shouldn't see it, it shouldn't be in their request.</li></ul>`,
+      },
+      {
+        group: "Next",
+        title: "When CAG fits, and when to move on",
+        body: `<p>Small, stable, shared knowledge: CAG. Big, changing or permission-sensitive knowledge: <strong>fetch only what each question needs</strong>.</p>
+               <p>That is RAG, next.</p>`,
+        notes: `<ul><li>Bridge to topics 05 and 06: build a searchable index of the documents, then load only the passages each question needs.</li></ul>`,
+      },
+    ],
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,1025 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KAG vs GraphRAG</title>
+<link rel="stylesheet" href="assets/deck.css?v=8">
+<style>
+  /* =================== scene: client, network, server =================== */
+  .scene {
+    position: absolute;
+    inset: 0;
+    padding: 18px 22px 14px;
+    display: grid;
+    grid-template-columns: minmax(0, .8fr) minmax(110px, .34fr) minmax(0, 1.6fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    row-gap: 12px;
+  }
+
+  .box {
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--card);
+    border: 1.5px solid var(--frame);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .box-head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 9px 14px 8px;
+    border-bottom: 1.5px solid var(--rule);
+    font-family: var(--font-ui);
+  }
+  .box-head b { font-size: 1.05em; }
+  .box-head span { color: var(--ink-2); font-size: .8em; }
+  .box.client { --tint: var(--c-history); }
+  .box.server { --tint: var(--l3); }
+  .box.client, .box.server {
+    background: color-mix(in srgb, var(--tint) 5%, var(--card));
+    border-color: color-mix(in srgb, var(--tint) 50%, var(--frame));
+  }
+  .box.client .box-head, .box.server .box-head {
+    background: color-mix(in srgb, var(--tint) 13%, transparent);
+    border-bottom-color: color-mix(in srgb, var(--tint) 30%, var(--rule));
+  }
+
+  /* ---------- client: the chat app ---------- */
+  .sys-chip {
+    margin: 10px 10px 0;
+    padding: 5px 9px;
+    border: 1.5px dashed var(--c-system);
+    border-radius: 6px;
+    font-family: var(--font-ui);
+    font-size: .76em;
+    color: var(--ink-2);
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .sys-chip b { color: var(--ink); font-weight: 600; white-space: nowrap; }
+  .sys-chip .sq { width: 10px; height: 10px; border-radius: 2px; background: var(--c-system); flex: none; }
+  .sys-chip.pulse { animation: pulse 1.2s var(--ease) 2; }
+  @keyframes pulse { 50% { background: color-mix(in srgb, var(--c-system) 20%, transparent); } }
+
+  .conv-label {
+    margin: 9px 10px 0;
+    font-family: var(--font-ui);
+    font-size: .74em;
+    color: var(--ink-2);
+    display: flex;
+    gap: 7px;
+    align-items: center;
+  }
+  .conv-label::before { content: ""; width: 10px; height: 10px; border-radius: 2px; background: var(--c-history); flex: none; }
+
+  .chat {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 7px;
+    margin: 6px 7px 7px;
+    padding: 7px 5px;
+    border-radius: 8px;
+    border: 1.5px solid transparent;
+    transition: border-color .4s, background .4s;
+  }
+  .chat.stored { border-color: var(--c-history); background: color-mix(in srgb, var(--c-history) 7%, transparent); }
+  .chat.flash { animation: flash 1.1s var(--ease) 2; }
+  @keyframes flash { 50% { background: color-mix(in srgb, var(--c-history) 22%, transparent); } }
+
+  .msg {
+    max-width: 90%;
+    padding: 6px 10px;
+    border-radius: 10px;
+    font-size: .8em;
+    line-height: 1.4;
+    flex: none;
+  }
+  .msg.user { align-self: flex-end; background: var(--ink); color: var(--card); border-bottom-right-radius: 3px; }
+  .msg.bot { align-self: flex-start; background: var(--sheet); border: 1.5px solid var(--rule); border-bottom-left-radius: 3px; }
+  .msg.err { border-color: var(--c-danger); color: var(--c-danger); }
+  .msg.more {
+    align-self: stretch;
+    max-width: none;
+    text-align: center;
+    font-family: var(--font-ui);
+    font-size: .74em;
+    color: var(--ink-2);
+    padding: 4px 0;
+    border-top: 1.5px dashed var(--rule);
+    border-bottom: 1.5px dashed var(--rule);
+    border-radius: 0;
+  }
+  .msg.file { display: flex; align-items: center; gap: 9px; font-family: var(--font-ui); }
+  .msg.file small { display: block; opacity: .75; font-size: .85em; }
+  .file-ic {
+    width: 18px; height: 23px; flex: none;
+    border: 1.5px solid currentColor;
+    border-radius: 2px;
+    background: linear-gradient(currentColor, currentColor) 3px 6px / 9px 1.5px no-repeat,
+                linear-gradient(currentColor, currentColor) 3px 10px / 9px 1.5px no-repeat,
+                linear-gradient(currentColor, currentColor) 3px 14px / 6px 1.5px no-repeat;
+  }
+  .msg[hidden] { display: none; }
+  .msg.enter { animation: msgIn .4s var(--ease) both; }
+  @keyframes msgIn {
+    from { opacity: 0; transform: translateY(10px) scale(.97); }
+    to { opacity: 1; transform: none; }
+  }
+
+  .input {
+    margin: 0 10px 10px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    border: 1.5px solid var(--rule);
+    border-radius: 8px;
+    padding: 5px 5px 5px 10px;
+    min-height: 38px;
+    font-size: .8em;
+  }
+  .input .txt { flex: 1; min-width: 0; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .input .txt:empty:not(.typing)::before { content: "Ask the helpdesk"; color: var(--ink-3); }
+  .input .txt.typing::after {
+    content: "";
+    display: inline-block;
+    width: 2px; height: 1.05em;
+    background: var(--ink);
+    margin-left: 1px;
+    vertical-align: -2px;
+    animation: blink .8s steps(1) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+  .input .send {
+    font-family: var(--font-ui);
+    font-weight: 600;
+    font-size: .9em;
+    background: var(--ink);
+    color: var(--card);
+    border-radius: 5px;
+    padding: 4px 10px;
+    transition: transform .15s;
+  }
+  .input .send.press { transform: scale(.88); }
+
+  /* ---------- network between client and server ---------- */
+  .wire { position: relative; }
+  .lane {
+    position: absolute;
+    left: 4px; right: 4px;
+    height: 2px;
+    background: repeating-linear-gradient(90deg, var(--ink-3) 0 6px, transparent 6px 12px);
+  }
+  .lane.req { top: 30%; }
+  .lane.res { top: 70%; }
+  .lane.req::after, .lane.res::after { content: ""; position: absolute; top: -5px; border: 6px solid transparent; }
+  .lane.req::after { right: -6px; border-left: 8px solid var(--ink-3); border-right: 0; }
+  .lane.res::after { left: -6px; border-right: 8px solid var(--ink-3); border-left: 0; }
+  .lane span {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: var(--font-ui);
+    font-size: .74em;
+    color: var(--ink-3);
+    white-space: nowrap;
+  }
+  .lane.req span { bottom: 8px; }
+  .lane.res span { top: 8px; }
+  .wire-cap {
+    position: absolute;
+    left: 0; right: 0; top: 50%;
+    transform: translateY(-50%);
+    text-align: center;
+    font-family: var(--font-ui);
+    font-size: .74em;
+    color: var(--ink-3);
+  }
+
+  .packet {
+    position: absolute;
+    top: 30%;
+    width: 184px;
+    transform: translateY(-50%) scale(.9);
+    opacity: 0;
+    background: var(--card);
+    border: 1.5px solid var(--frame);
+    border-radius: 8px;
+    box-shadow: 4px 4px 0 var(--shadow);
+    padding: 7px 10px 6px;
+    font-family: var(--font-ui);
+    font-size: .74em;
+    z-index: 5;
+    left: -70px;
+    transition: left 1.15s cubic-bezier(.55, .05, .3, 1), opacity .35s, transform .35s var(--ease);
+  }
+  .packet.on { opacity: 1; transform: translateY(-50%) scale(1); }
+  .packet.at-server { left: calc(100% - 110px); }
+  .packet.instant { transition: none; }
+  .packet .ph { font-weight: 700; margin-bottom: 4px; display: flex; justify-content: space-between; }
+  .packet .ph span { color: var(--ink-2); font-weight: 400; }
+  .packet .row { display: grid; grid-template-columns: 10px 1fr auto; gap: 7px; align-items: center; padding: 1px 0; }
+  .packet .row i { width: 10px; height: 10px; border-radius: 2px; }
+  .packet .row b { font-weight: 400; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .packet .tot {
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1.5px solid var(--rule);
+    display: flex;
+    justify-content: space-between;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .err-packet {
+    position: absolute;
+    top: 70%;
+    left: calc(100% - 110px);
+    width: 170px;
+    transform: translateY(-50%);
+    opacity: 0;
+    background: var(--card);
+    border: 2px solid var(--c-danger);
+    color: var(--c-danger);
+    border-radius: 8px;
+    padding: 6px 9px;
+    font-family: var(--font-ui);
+    font-size: .74em;
+    font-weight: 600;
+    z-index: 5;
+    transition: left 1s cubic-bezier(.55, .05, .3, 1), opacity .3s;
+  }
+  .err-packet.on { opacity: 1; }
+  .err-packet.at-client { left: -60px; }
+  .err-packet.instant { transition: none; }
+
+  .stream { position: absolute; top: 70%; left: 4px; right: 4px; height: 0; opacity: 0; transition: opacity .3s; }
+  .stream.on { opacity: 1; }
+  .stream i {
+    position: absolute;
+    top: -6px;
+    width: 12px; height: 12px;
+    border-radius: 2px;
+    background: var(--c-response);
+    animation: flow 1s linear infinite;
+  }
+  .stream i:nth-child(2) { animation-delay: .25s; }
+  .stream i:nth-child(3) { animation-delay: .5s; }
+  .stream i:nth-child(4) { animation-delay: .75s; }
+  .solo {
+    position: absolute;
+    top: calc(70% - 6px);
+    left: calc(100% - 12px);
+    width: 12px; height: 12px;
+    border-radius: 2px;
+    background: var(--c-response);
+    opacity: 0;
+    z-index: 4;
+  }
+  .solo.go { animation: flow 1s linear 1 both; }
+  @keyframes flow {
+    from { left: calc(100% - 12px); opacity: 0; }
+    15% { opacity: 1; }
+    85% { opacity: 1; }
+    to { left: 0; opacity: 0; }
+  }
+
+  /* =================== server: the model =================== */
+  .srv {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) minmax(92px, auto);
+    grid-template-rows: auto minmax(0, 1fr) minmax(0, .8fr) auto auto;
+    grid-template-areas:
+      "wl   status status"
+      "win  net    out"
+      "win  tray   tray"
+      "win  cache  cache"
+      "wu   meta   meta";
+    column-gap: 14px;
+    row-gap: 8px;
+    padding: 10px 14px 10px;
+    font-family: var(--font-ui);
+  }
+  .area-label { font-weight: 600; font-size: .8em; line-height: 1.2; }
+  .area-label small { display: block; font-weight: 400; color: var(--ink-3); }
+
+  /* context window column */
+  .wl { grid-area: wl; align-self: end; }
+  /* the column keeps 14% of its height free below the window, so an overflow always has room */
+  .col {
+    grid-area: win;
+    position: relative;
+    width: clamp(92px, 7.4vw, 140px);
+  }
+  .cw-box {
+    position: absolute;
+    left: 0; right: 0; top: 0;
+    height: 86%;
+    border: 2px solid var(--frame);
+    border-radius: 6px;
+    background: var(--cell-empty);
+    transition: border-color .3s;
+  }
+  .col.over .cw-box { border-color: var(--c-danger); }
+  .wu { grid-area: wu; font-size: .76em; color: var(--ink-2); }
+  .wu b { color: var(--ink); font-size: 1.3em; font-variant-numeric: tabular-nums; }
+  .wu.over b { color: var(--c-danger); }
+
+  .seg {
+    position: absolute;
+    left: 3px; right: 3px;
+    min-height: 5px;
+    border-radius: 3px;
+    color: var(--on-color);
+    font-size: .66em;
+    font-weight: 600;
+    line-height: 1.2;
+    padding: 3px 5px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    transition:
+      height .6s var(--ease) var(--d, 0s),
+      opacity .4s var(--ease) var(--d, 0s),
+      transform .4s var(--ease) var(--d, 0s);
+  }
+  .seg.slow { transition: height var(--grow, 1.8s) linear; }
+  .seg.leave { opacity: 0; transform: translateX(26px); }
+  .seg.system { background: var(--c-system); }
+  .seg.history { background: var(--c-history); }
+  .seg.docs { background: var(--c-docs); }
+  .seg.question { background: var(--c-question); }
+  .seg.response { background: var(--c-response); }
+  .seg.room {
+    background: repeating-linear-gradient(135deg,
+      color-mix(in srgb, var(--c-response) 30%, transparent) 0 3px, transparent 3px 6px);
+    border: 1.5px dashed var(--c-response);
+    color: var(--c-response);
+  }
+  .seg { z-index: 1; }
+  .over-zone {
+    position: absolute;
+    left: 0; right: 0;
+    top: 86%;
+    height: 0;
+    border: 2px dashed var(--c-danger);
+    border-top: 0;
+    border-radius: 0 0 6px 6px;
+    background: repeating-linear-gradient(135deg,
+      color-mix(in srgb, var(--c-danger) 30%, transparent) 0 4px, transparent 4px 8px);
+    opacity: 0;
+    z-index: 0;
+    transition: opacity .4s, height .6s var(--ease);
+  }
+  .col.over .over-zone { opacity: 1; }
+
+  /* status line */
+  .status { grid-area: status; display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: .86em; align-self: end; }
+  .status i { width: 10px; height: 10px; border-radius: 50%; background: var(--ink-3); flex: none; }
+  .status.reading i { background: var(--ink); animation: beat .7s ease-in-out infinite; }
+  .status.writing i { background: var(--c-response); animation: beat .5s ease-in-out infinite; }
+  .status.error { color: var(--c-danger); }
+  .status.error i { background: var(--c-danger); }
+  .status.idle { color: var(--ink-2); font-weight: 400; }
+  .status.idle i { background: var(--accent); }
+  @keyframes beat { 50% { transform: scale(1.5); opacity: .6; } }
+
+  /* the neural network */
+  .net { grid-area: net; position: relative; min-height: 0; }
+  .net svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+  /* each layer has its own colour; the reading wave takes it, the writing pass is pink */
+  .net .n0, .net .e0, .net .lt0 { --lc: var(--l1); }
+  .net .n1, .net .e1, .net .lt1 { --lc: var(--l2); }
+  .net .n2, .net .e2, .net .lt2 { --lc: var(--l3); }
+  .net .n3, .net .e3, .net .lt3, .net .e4 { --lc: var(--l4); }
+  .net .n, .net .e { --wave: var(--lc); }
+  .net.writing .n, .net.writing .e { --wave: var(--c-response); }
+  .net .e { stroke: color-mix(in srgb, var(--lc) 22%, var(--rule)); stroke-width: 1; transition: stroke .2s, stroke-width .2s; }
+  .net .e.hot { stroke: var(--wave); stroke-width: 1.7; }
+  .net .n { fill: var(--card); stroke: color-mix(in srgb, var(--lc) 65%, var(--frame)); stroke-width: 1.8; transition: fill .2s, stroke .2s; }
+  .net .n.hot { fill: var(--wave); stroke: var(--wave); filter: drop-shadow(0 0 4px color-mix(in srgb, var(--wave) 70%, transparent)); }
+  .net .lt { font-family: var(--font-ui); font-size: 11px; font-weight: 700; fill: var(--lc); text-anchor: middle; }
+  .net .loop { fill: none; stroke: var(--rule); stroke-width: 1.5; stroke-dasharray: 4 4; transition: stroke .2s; }
+  .net .loop.hot { stroke: var(--c-response); animation: dash .5s linear infinite; }
+  .net .loop-lab { font-family: var(--font-ui); font-size: 10px; fill: var(--ink-3); text-anchor: middle; }
+  @keyframes dash { to { stroke-dashoffset: -16; } }
+  .net .ft { opacity: 0; }
+  .net.feeding .ft { animation: feed .8s linear infinite; }
+  @keyframes feed {
+    from { transform: translateX(-6px); opacity: 0; }
+    25% { opacity: 1; }
+    to { transform: translateX(46px); opacity: 0; }
+  }
+  .net.busy .n { animation: busy .24s ease-in-out infinite alternate; }
+  .net.busy .n:nth-of-type(3n) { animation-delay: .08s; }
+  .net.busy .n:nth-of-type(3n+1) { animation-delay: .16s; }
+  @keyframes busy { to { fill: var(--c-response); stroke: var(--c-response); } }
+  .net-note { position: absolute; left: 0; right: 0; bottom: -2px; text-align: center; font-size: .66em; color: var(--ink-3); }
+
+  /* output */
+  .out { grid-area: out; align-self: center; text-align: center; }
+  .outbox {
+    border: 2px solid var(--rule);
+    border-radius: 8px;
+    padding: 7px 8px 8px;
+    background: var(--card);
+    transition: border-color .3s;
+  }
+  .outbox.live { border-color: var(--c-response); }
+  .outbox small { display: block; font-size: .7em; color: var(--ink-2); }
+  .outbox b {
+    display: block;
+    min-height: 1.25em;
+    font-size: 1.45em;
+    line-height: 1.25;
+    color: var(--c-response);
+    white-space: pre;
+  }
+  .outbox b.pop { animation: pop .3s var(--ease); }
+  @keyframes pop { from { transform: scale(.6); opacity: 0; } to { transform: none; opacity: 1; } }
+
+  /* working values tray */
+  .tray { grid-area: tray; min-height: 0; display: flex; flex-direction: column; gap: 5px; }
+  .tray-head { display: flex; align-items: baseline; gap: 10px; font-size: .78em; white-space: nowrap; overflow: hidden; }
+  .tray-head b { font-weight: 600; }
+  .tray-head span { color: var(--ink-3); }
+  .tray-head .same-note { color: var(--ink); display: none; align-items: center; gap: 6px; font-weight: 600; animation: capIn .4s var(--ease) both; }
+  .tray.same .tray-head .sub { display: none; }
+  .tray-head .same-note::before { content: ""; width: 16px; height: 10px; border: 2px dashed var(--ink); border-radius: 3px; }
+  .tray.same .same-note { display: inline-flex; }
+  .tray-rows {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 50px minmax(0, 1fr);
+    grid-template-rows: repeat(4, minmax(0, 1fr));
+    row-gap: 4px;
+    column-gap: 8px;
+    border: 1.5px dashed var(--rule);
+    border-radius: 6px;
+    padding: 6px 8px;
+  }
+  .tlab { font-size: .66em; font-weight: 700; color: var(--lc); align-self: center; text-align: right; white-space: nowrap; }
+  .tlab::before {
+    content: "";
+    display: inline-block;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--lc);
+    margin-right: 5px;
+    vertical-align: 1px;
+  }
+  .tsegs { display: flex; gap: 2px; min-height: 0; border-radius: 3px; transition: box-shadow .2s; }
+  .tsegs.read { box-shadow: 0 0 0 2px var(--c-response); }
+  .tseg {
+    --k: var(--ink-3);
+    height: 100%;
+    flex: none;
+    border-radius: 2px;
+    background-color: var(--k);
+    background-image: repeating-linear-gradient(90deg, transparent 0 3px, color-mix(in srgb, var(--card) 45%, transparent) 3px 4px);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform .45s var(--ease) var(--d, 0s), width var(--wdur, .5s) linear, opacity .4s;
+  }
+  .tseg.on { transform: scaleX(1); }
+  .tseg.leave { opacity: 0; }
+  .tray.instant .tseg { transition: none; }
+  .tseg.system { --k: var(--c-system); }
+  .tseg.history { --k: var(--c-history); }
+  .tseg.question { --k: var(--c-question); }
+  .tseg.response { --k: var(--c-response); }
+  .same-wrap { grid-area: 1 / 2 / span 4 / 3; position: relative; pointer-events: none; }
+  .same-box {
+    position: absolute;
+    left: -4px; top: -4px; bottom: -4px;
+    border: 2px dashed var(--ink);
+    border-radius: 5px;
+    opacity: 0;
+    transition: opacity .5s;
+  }
+  .tray.same .same-box { opacity: 1; }
+  .tray-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: .72em; color: var(--ink-2); min-height: 1.2em; }
+  .tray-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .tray-legend i { width: 9px; height: 9px; border-radius: 2px; }
+  .tray-legend b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  /* counters */
+  .meta { grid-area: meta; display: flex; align-items: baseline; gap: 6px 20px; flex-wrap: wrap; font-size: .76em; color: var(--ink-2); }
+  .meta b { color: var(--ink); font-size: 1.45em; font-variant-numeric: tabular-nums; margin-left: 4px; }
+  .meta .memo { margin-left: auto; }
+  .meta .memo strong { color: var(--ink); }
+  .memo.flash strong { animation: memoFlash 1.2s var(--ease) 2; }
+  @keyframes memoFlash { 50% { color: var(--c-danger); } }
+
+  /* ---------- callout row under the scene ---------- */
+  .callout { grid-column: 1 / -1; position: relative; min-height: 60px; }
+  .callout > div { position: absolute; inset: 0; display: flex; align-items: center; gap: 18px; }
+  .callout .big {
+    font-family: var(--font-ui);
+    font-weight: 700;
+    font-size: clamp(19px, 1.6vw, 29px);
+    line-height: 1.15;
+  }
+  .callout .small { color: var(--ink-2); font-size: .9em; max-width: 60em; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  .chip {
+    font-family: var(--font-ui);
+    font-size: .9em;
+    padding: 2px 8px 3px;
+    border-radius: 4px;
+    border: 1.5px solid var(--c-question);
+    background: color-mix(in srgb, var(--c-question) 14%, var(--card));
+    white-space: pre;
+  }
+  .chip:nth-child(even) { background: var(--card); }
+  .callout .eq { font-family: var(--font-ui); color: var(--ink-2); }
+  .callout .eq b { color: var(--ink); }
+
+  /* =================== chart layer (last step) =================== */
+  .chart {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    gap: 12px;
+    font-family: var(--font-ui);
+  }
+  .chart-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px 24px; flex-wrap: wrap; }
+  .chart-head h2 { margin: 0; font-size: 1.25em; }
+  .chart-key { display: flex; gap: 18px; font-size: .82em; color: var(--ink-2); flex-wrap: wrap; }
+  .chart-key span { display: inline-flex; align-items: center; gap: 7px; }
+  .chart-key i { width: 14px; height: 14px; border-radius: 2px; }
+  .hatch {
+    background: repeating-linear-gradient(135deg, var(--ink-3) 0 3px, color-mix(in srgb, var(--ink-3) 35%, transparent) 3px 6px);
+  }
+  .plot { position: relative; min-height: 0; margin-left: 44px; border-left: 1.5px solid var(--frame); border-bottom: 1.5px solid var(--frame); }
+  .gridline { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--rule); }
+  .gridline span { position: absolute; right: calc(100% + 8px); top: -.65em; font-size: .72em; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .bars { position: absolute; inset: 0 6px 0 6px; display: flex; align-items: flex-end; gap: 5px; }
+  .bar {
+    flex: 1;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    transform: scaleY(0);
+    transform-origin: bottom;
+    transition: transform .55s var(--ease) calc(var(--i) * 45ms + .15s);
+  }
+  .chart.is-on .bar { transform: scaleY(1); }
+  .bar .new { background: var(--c-question); border-radius: 2px 2px 0 0; }
+  .xaxis { margin-left: 50px; margin-right: 6px; display: flex; gap: 5px; font-size: .72em; color: var(--ink-3); }
+  .xaxis span { flex: 1; text-align: center; font-variant-numeric: tabular-nums; }
+  .totals { display: flex; gap: 16px 40px; align-items: flex-end; flex-wrap: wrap; border-top: 1.5px solid var(--rule); padding-top: 12px; }
+  .totals .t b { display: block; font-size: clamp(26px, 2.4vw, 42px); line-height: 1; font-variant-numeric: tabular-nums; }
+  .totals .t span { font-size: .82em; color: var(--ink-2); }
+  .totals .t.alt b { color: var(--ink-2); }
+  .totals .foot { margin-left: auto; font-size: .76em; color: var(--ink-3); max-width: 22em; font-family: var(--font-text); }
+
+  /* =================== page 02: prompt caching =================== */
+
+  /* text served from cache: outlined in the cache colour */
+  .seg.hit { box-shadow: inset 0 0 0 2.5px var(--c-cache); }
+  .seg.date { background: var(--c-danger); }
+  .tseg.date { --k: var(--c-danger); }
+  .tseg.docs { --k: var(--c-docs); }
+  .tseg.cached { box-shadow: 0 0 0 2px var(--c-cache); }
+  .tseg.fromcache { animation: fromCache 1s var(--ease); }
+  @keyframes fromCache {
+    0% { transform: translateY(30px) scaleX(1); opacity: 0; }
+    60% { opacity: 1; }
+    100% { transform: none; }
+  }
+
+  /* the prompt cache: kept between requests */
+  .cache {
+    grid-area: cache;
+    border: 2px dashed color-mix(in srgb, var(--c-cache) 55%, var(--rule));
+    border-radius: 8px;
+    padding: 6px 10px 8px;
+    display: grid;
+    gap: 5px;
+    transition: border-color .3s, background .3s;
+  }
+  .cache.has { border-style: solid; border-color: var(--c-cache); background: color-mix(in srgb, var(--c-cache) 7%, transparent); }
+  .cache-head { display: flex; align-items: baseline; gap: 10px; font-size: .78em; white-space: nowrap; overflow: hidden; }
+  .cache-head b { color: var(--c-cache); font-weight: 700; }
+  .cache-head span { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; }
+  .cache-head .cache-flag, .cache-head .ttl, .cache-head b { flex: none; }
+  .cache-head .ttl { margin-left: auto; color: var(--ink); font-weight: 700; font-variant-numeric: tabular-nums; }
+  .cache-head .ttl.low { color: var(--c-danger); }
+  .cache-bar { display: flex; gap: 2px; height: 16px; }
+  .cseg {
+    --k: var(--ink-3);
+    height: 100%;
+    border-radius: 2px;
+    background-color: var(--k);
+    background-image: repeating-linear-gradient(90deg, transparent 0 3px, color-mix(in srgb, var(--card) 45%, transparent) 3px 4px);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform .6s var(--ease) var(--d, 0s), opacity .5s;
+  }
+  .cseg.on { transform: scaleX(1); }
+  .cseg.instant { transition: none; }
+  .cseg.leave { opacity: 0; }
+  .cseg.system { --k: var(--c-system); }
+  .cseg.docs { --k: var(--c-docs); }
+  .cseg.history { --k: var(--c-history); }
+  .cseg.question { --k: var(--c-question); }
+  .cseg.date { --k: var(--c-danger); }
+  .cache.hit { animation: cacheHit 1.1s var(--ease); }
+  @keyframes cacheHit { 40% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--c-cache) 35%, transparent); } }
+  .cache.miss { animation: cacheMiss .7s var(--ease); border-color: var(--c-danger); }
+  @keyframes cacheMiss {
+    20% { transform: translateX(-5px); }
+    40% { transform: translateX(4px); }
+    60% { transform: translateX(-3px); }
+    80% { transform: translateX(2px); }
+  }
+  .cache-flag {
+    font-size: .74em;
+    font-weight: 700;
+    border-radius: 999px;
+    padding: 0 8px 1px;
+    opacity: 0;
+    transition: opacity .3s;
+  }
+  .cache-flag.on { opacity: 1; }
+  .cache-flag.hit { color: var(--on-color); background: var(--c-cache); }
+  .cache-flag.miss { color: #fff; background: var(--c-danger); }
+  .cache-flag.write { color: var(--c-cache); border: 1.5px solid var(--c-cache); }
+
+  /* billing line */
+  .meta .bill b { color: var(--c-cache); }
+  .meta .bill small { color: var(--ink-3); margin-left: 4px; }
+
+  /* the cache marker inside a request packet */
+  .packet .mk {
+    margin: 3px 0;
+    border-top: 2px dashed var(--c-cache);
+    color: var(--c-cache);
+    font-size: .86em;
+    font-weight: 700;
+    padding-top: 1px;
+  }
+  .packet .row.d i { background: var(--c-danger); }
+
+  /* the app's stable beginning, in the client */
+  .sys-chip .policy { color: var(--c-docs); font-weight: 600; }
+
+  /* clock shown while time passes */
+  .clock {
+    position: absolute;
+    left: 36%; top: 42%;
+    transform: translate(-50%, -50%) scale(.9);
+    z-index: 6;
+    background: var(--card);
+    border: 2px solid var(--c-cache);
+    border-radius: 12px;
+    padding: 10px 18px;
+    text-align: center;
+    font-family: var(--font-ui);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .3s, transform .3s var(--ease);
+  }
+  .clock.on { opacity: 1; transform: translate(-50%, -50%); }
+  .clock b { display: block; font-size: 1.8em; font-variant-numeric: tabular-nums; }
+  .clock span { font-size: .8em; color: var(--ink-2); }
+
+  /* =================== explainer layers =================== */
+  .explain {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    gap: 18px;
+    font-family: var(--font-ui);
+  }
+  .explain h2 { margin: 0; font-size: 1.3em; }
+  .explain .lead { margin: 4px 0 0; font-family: var(--font-text); color: var(--ink-2); max-width: 54em; }
+  .explain .foot { font-size: .78em; color: var(--ink-3); font-family: var(--font-text); }
+
+  .reqs { display: grid; gap: 26px; align-content: center; }
+  .req { display: grid; grid-template-columns: 9.5em minmax(0, 1fr); gap: 16px; align-items: center; }
+  .req-name { font-weight: 700; }
+  .req-name small { display: block; font-weight: 400; color: var(--ink-2); font-size: .82em; }
+  .rbar { position: relative; display: flex; gap: 2px; height: 48px; }
+  .rbar > span {
+    height: 100%;
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    font-size: .78em;
+    font-weight: 600;
+    color: var(--on-color);
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .rbar .system { background: var(--c-system); }
+  .rbar .docs { background: var(--c-docs); }
+  .rbar .history { background: var(--c-history); }
+  .rbar .question { background: var(--c-question); }
+  .rbar .date { background: var(--c-danger); color: #fff; }
+  .rbar .tools { background: var(--c-tools); }
+  .rbar .cachedpart { box-shadow: inset 0 0 0 3px var(--c-cache); }
+  .rbar .missed { opacity: .45; }
+  .rbar > .marker {
+    overflow: visible;
+    position: absolute;
+    top: -12px; bottom: -12px;
+    width: 0;
+    border-left: 3px dashed var(--c-cache);
+    padding: 0;
+  }
+  .rbar .marker::after {
+    content: "cache marker";
+    position: absolute;
+    top: -18px; left: -40px;
+    width: 80px;
+    text-align: center;
+    font-size: .72em;
+    font-weight: 700;
+    color: var(--c-cache);
+  }
+  .verdict { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; margin-top: 8px; font-size: .9em; }
+  .verdict.ok { color: var(--c-cache); }
+  .verdict.bad { color: var(--c-danger); }
+  .brace { display: flex; gap: 2px; margin-top: 6px; font-size: .76em; color: var(--ink-2); }
+  .brace span { border-top: 2px solid currentColor; padding-top: 3px; text-align: center; }
+  .brace .c { color: var(--c-cache); }
+  .brace .n { color: var(--ink-2); }
+
+  .rule-list { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: .9em; }
+  .rule-list .tk { background: var(--card); border: 1.5px solid var(--rule); border-radius: 6px; padding: 3px 9px; }
+  .rule-list .arrow { color: var(--ink-3); }
+
+  /* price table */
+  .prices { width: 100%; border-collapse: collapse; font-size: .92em; align-self: center; }
+  .prices th, .prices td { text-align: left; padding: 12px 14px; border-bottom: 1.5px solid var(--rule); vertical-align: top; }
+  .prices th { font-size: .8em; color: var(--ink-2); font-weight: 600; }
+  .prices td:first-child { font-weight: 700; white-space: nowrap; }
+  .prices td b { color: var(--c-cache); }
+  .prices td small { display: block; color: var(--ink-3); font-family: var(--font-text); margin-top: 2px; }
+
+  /* the 20-question chart reuses page 01's chart styles */
+  .bar-c .cachepart { background: color-mix(in srgb, var(--c-cache) 75%, var(--card)); }
+
+  /* =================== page 10: KAG vs GraphRAG, in pictures =================== */
+  .vs { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 22px; min-height: 0; align-items: stretch; }
+  .side { border: 1.5px solid color-mix(in srgb, var(--sc) 50%, var(--rule)); border-radius: 14px; background: color-mix(in srgb, var(--sc) 5%, var(--sheet)); padding: 12px 16px; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 8px; min-height: 0; }
+  .side.kag { --sc: var(--p-kag); }
+  .side.gr { --sc: var(--c-history); }
+  .side h3 { margin: 0; font-size: 1.15em; color: var(--sc); }
+  .side .cap { font-family: var(--font-text); color: var(--ink-2); font-size: 1.02em; text-align: center; }
+  .pic { width: 100%; height: 100%; min-height: 0; font-family: var(--font-ui); }
+  .pic text { font-size: 11px; font-weight: 700; fill: var(--ink); }
+  .pic .sm { font-size: 9.5px; fill: var(--ink-3); font-weight: 700; }
+  .pic .e { stroke: var(--frame); stroke-width: 2.4; }
+  .pic .n { fill: var(--card); stroke-width: 3.5; }
+  .pic .lk { stroke: var(--ink-3); stroke-width: 1.2; stroke-dasharray: 3 3; }
+  .pic .ck { fill: color-mix(in srgb, var(--c-docs) 14%, var(--card)); stroke: color-mix(in srgb, var(--c-docs) 70%, var(--rule)); }
+  .pic .card { fill: var(--card); stroke-width: 1.5; }
+  .pic .card:not([stroke]) { stroke: var(--frame); }
+  .pic .hull { stroke-width: 2; stroke-dasharray: 6 4; }
+  .pic .walk { stroke: var(--c-question); stroke-width: 7; stroke-linecap: round; opacity: .85; }
+  .pic .ring { fill: none; stroke: var(--c-question); stroke-width: 3.5; }
+
+  /* step 0: one start, two roads */
+  .road { display: grid; grid-template-columns: repeat(3, auto) 1fr; align-items: center; gap: 16px; align-content: center; justify-content: center; }
+  .stop { border: 2px solid var(--rc); border-radius: 12px; padding: 12px 16px; background: color-mix(in srgb, var(--rc) 9%, var(--card)); font-weight: 700; font-size: 1.05em; text-align: center; }
+  .stop small { display: block; font-weight: 400; color: var(--ink-2); font-size: .8em; }
+  .arr { font-size: 1.6em; color: var(--ink-3); font-weight: 700; }
+  .fork { display: grid; gap: 16px; }
+  .fork .stop { text-align: left; }
+
+  /* step 3: which one answers this? */
+  .sorter { display: grid; gap: 10px; align-content: center; }
+  .qrow { display: grid; grid-template-columns: minmax(0, 1fr) 150px; gap: 14px; align-items: center; }
+  .qrow .q { border: 1.5px solid var(--rule); border-radius: 10px; padding: 9px 14px; background: var(--card); font-family: var(--font-text); font-size: 1.05em; }
+  .qrow .a { border-radius: 999px; padding: 6px 14px; text-align: center; font-weight: 700; color: var(--on-color); background: var(--ac); }
+
+  /* step 4: effort as dots */
+  .dots { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr); gap: 10px 18px; align-items: center; align-content: center; font-size: 1.02em; }
+  .dots .h { font-weight: 700; color: var(--ink-3); font-size: .85em; }
+  .dots .h.kag { color: var(--p-kag); } .dots .h.gr { color: var(--c-history); }
+  .dots .r { font-weight: 700; }
+  .dots .r small { display: block; font-weight: 400; color: var(--ink-3); font-size: .8em; }
+  .dots .v { display: flex; gap: 6px; align-items: center; }
+  .dots .v i { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--dc); }
+  .dots .v i.f { background: var(--dc); }
+  .dots .v span { font-size: .8em; color: var(--ink-2); margin-left: 6px; font-family: var(--font-text); }
+  .dots .kag { --dc: var(--p-kag); } .dots .gr { --dc: var(--c-history); }
+
+  /* step 5: what the papers report */
+  .rep2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 22px; align-content: center; }
+  .rep2 .side { grid-template-rows: auto auto auto; align-content: start; }
+  .bignum { font-size: clamp(34px, 3.6vw, 60px); font-weight: 700; line-height: 1; color: var(--sc); font-variant-numeric: tabular-nums; }
+  .bars { display: grid; gap: 6px; }
+  .bar { display: grid; grid-template-columns: 110px minmax(0, 1fr) 46px; gap: 8px; align-items: center; font-size: .9em; }
+  .bar .t { height: 16px; border-radius: 4px; background: var(--bc); transform-origin: left; }
+  .bar b { text-align: right; font-variant-numeric: tabular-nums; }
+  .is-on .bar .t { animation: grow 1s var(--ease) both; animation-delay: var(--d, .3s); }
+  @keyframes grow { from { transform: scaleX(0); } }
+  .caveat { font-family: var(--font-text); color: var(--ink-2); font-size: .9em; }
+</style>
+</head>
+<body data-prev="09-graphrag.html" data-next="11-graph-limits.html" data-topic="10">
+<div class="deck">
+  <header class="topbar">
+    <span class="sec">10</span>
+    <span class="name">KAG vs GraphRAG</span>
+    <span class="spacer"></span>
+    <a href="index.html">Agenda</a>
+  </header>
+
+  <main class="layout tl">
+    <aside class="tl-col">
+      <div class="tl-head">
+        <h1>KAG vs GraphRAG</h1>
+        <p class="sub">Same start, different goals.</p>
+      </div>
+      <ol id="timeline" class="timeline"></ol>
+    </aside>
+
+    <section class="stage" aria-label="Animation">
+
+      <!-- 0: one start, two roads -->
+      <div class="layer explain" data-show="0">
+        <div><h2>The same start</h2></div>
+        <div class="road">
+          <div class="stop" style="--rc:var(--c-docs)" data-show="0" data-anim="left">Documents</div>
+          <span class="arr" data-show="0" style="--delay:.3s">→</span>
+          <div class="stop" data-show="0" data-anim="left" style="--rc:var(--l3);--delay:.4s">An LLM extracts<small>entities and relations</small></div>
+          <div class="fork">
+            <div class="stop" data-show="0" data-anim="left" style="--rc:var(--p-kag);--delay:.9s">→ KAG<small>a precise graph, followed step by step</small></div>
+            <div class="stop" data-show="0" data-anim="left" style="--rc:var(--c-history);--delay:1.2s">→ GraphRAG<small>a map of themes, read as summaries</small></div>
+          </div>
+        </div>
+        <div></div>
+      </div>
+
+      <!-- 1: what each builds -->
+      <div class="layer explain" data-show="1">
+        <div><h2>What each one builds</h2></div>
+        <div class="vs">
+          <div class="side kag" data-show="1" data-anim="up">
+            <h3>KAG</h3>
+            <svg class="pic" viewBox="0 0 360 210" preserveAspectRatio="xMidYMid meet" aria-label="A typed graph under a schema, each node linked to its text">
+              <rect class="card" x="8" y="8" width="132" height="58" rx="8"/>
+              <text x="18" y="27">Schema</text>
+              <circle cx="24" cy="46" r="6" fill="var(--c-history)"/><text class="sm" x="34" y="49">Person</text>
+              <circle cx="82" cy="46" r="6" fill="var(--c-docs)"/><text class="sm" x="92" y="49">Team</text>
+              <line class="e" x1="60" y1="130" x2="180" y2="130"/><line class="e" x1="180" y1="130" x2="300" y2="130"/><line class="e" x1="300" y1="130" x2="300" y2="58"/>
+              <text class="sm" x="120" y="122" text-anchor="middle" style="fill:var(--p-kag)">works in</text>
+              <text class="sm" x="240" y="122" text-anchor="middle" style="fill:var(--p-kag)">managed by</text>
+              <text class="sm" x="308" y="98" style="fill:var(--p-kag)">is a</text>
+              <line class="lk" x1="60" y1="140" x2="60" y2="166"/><line class="lk" x1="180" y1="140" x2="180" y2="166"/><line class="lk" x1="300" y1="140" x2="300" y2="166"/>
+              <rect class="ck" x="30" y="166" width="60" height="16" rx="3"/><rect class="ck" x="150" y="166" width="60" height="16" rx="3"/><rect class="ck" x="270" y="166" width="60" height="16" rx="3"/>
+              <text class="sm" x="60" y="178" text-anchor="middle">text</text><text class="sm" x="180" y="178" text-anchor="middle">text</text><text class="sm" x="300" y="178" text-anchor="middle">text</text>
+              <circle class="n" cx="60" cy="130" r="10" stroke="var(--c-history)"/><circle class="n" cx="180" cy="130" r="10" stroke="var(--c-docs)"/><circle class="n" cx="300" cy="130" r="10" stroke="var(--c-history)"/><circle class="n" cx="300" cy="48" r="10" stroke="var(--c-system)"/>
+              <text x="60" y="110" text-anchor="middle">Omar</text><text x="180" y="110" text-anchor="middle">Sales</text><text x="262" y="110" text-anchor="middle">Sara</text><text x="250" y="52" text-anchor="middle">Line manager</text>
+            </svg>
+            <div class="cap">Typed facts under a schema, each linked to its text</div>
+          </div>
+          <div class="side gr" data-show="1" data-anim="up" style="--delay:.25s">
+            <h3>GraphRAG</h3>
+            <svg class="pic" viewBox="0 0 360 210" preserveAspectRatio="xMidYMid meet" aria-label="Clusters of entities, each with a written report">
+              <ellipse class="hull" cx="70" cy="62" rx="58" ry="44" fill="color-mix(in srgb, var(--c-danger) 12%, transparent)" stroke="var(--c-danger)"/>
+              <ellipse class="hull" cx="170" cy="70" rx="50" ry="40" fill="color-mix(in srgb, var(--c-history) 12%, transparent)" stroke="var(--c-history)"/>
+              <ellipse class="hull" cx="110" cy="158" rx="60" ry="40" fill="color-mix(in srgb, var(--c-system) 12%, transparent)" stroke="var(--c-system)"/>
+              <g fill="var(--c-danger)"><circle cx="55" cy="50" r="5"/><circle cx="80" cy="72" r="5"/><circle cx="70" cy="40" r="5"/><circle cx="95" cy="55" r="5"/></g>
+              <g fill="var(--c-history)"><circle cx="160" cy="60" r="5"/><circle cx="185" cy="80" r="5"/><circle cx="175" cy="50" r="5"/></g>
+              <g fill="var(--c-system)"><circle cx="95" cy="150" r="5"/><circle cx="120" cy="168" r="5"/><circle cx="130" cy="145" r="5"/></g>
+              <rect class="card" x="236" y="20" width="112" height="44" rx="7" stroke="var(--c-danger)"/><text x="246" y="38">Workload</text><text class="sm" x="246" y="54">report · 8.5</text>
+              <rect class="card" x="236" y="76" width="112" height="44" rx="7" stroke="var(--c-history)"/><text x="246" y="94">Remote tools</text><text class="sm" x="246" y="110">report · 8.0</text>
+              <rect class="card" x="236" y="132" width="112" height="44" rx="7" stroke="var(--c-system)"/><text x="246" y="150">Career</text><text class="sm" x="246" y="166">report · 6.5</text>
+            </svg>
+            <div class="cap">Communities of entities, each with a written report</div>
+          </div>
+        </div>
+        <div></div>
+      </div>
+
+      <!-- 2: how each answers -->
+      <div class="layer explain" data-show="2">
+        <div><h2>How each one answers</h2></div>
+        <div class="vs">
+          <div class="side kag" data-show="2" data-anim="up">
+            <h3>"Who approves Omar's carry-over?"</h3>
+            <svg class="pic" viewBox="0 0 360 170" preserveAspectRatio="xMidYMid meet" aria-label="The answer follows a path: Omar, Sales team, Sara Ahmed">
+              <line class="e" x1="50" y1="90" x2="180" y2="90"/><line class="e" x1="180" y1="90" x2="310" y2="90"/>
+              <line class="walk" x1="50" y1="90" x2="180" y2="90" data-show="2" style="--delay:.7s"/>
+              <line class="walk" x1="180" y1="90" x2="310" y2="90" data-show="2" style="--delay:1.4s"/>
+              <circle class="n" cx="50" cy="90" r="11" stroke="var(--c-history)"/><circle class="n" cx="180" cy="90" r="11" stroke="var(--c-docs)"/><circle class="n" cx="310" cy="90" r="11" stroke="var(--c-history)"/>
+              <circle class="ring" cx="310" cy="90" r="19" data-show="2" style="--delay:2s"/>
+              <text x="50" y="68" text-anchor="middle">Omar</text><text x="180" y="68" text-anchor="middle">Sales team</text><text x="310" y="68" text-anchor="middle">Sara Ahmed</text>
+            </svg>
+            <div class="cap" data-show="2" style="--delay:2.3s"><b style="color:var(--p-kag)">One exact answer</b>, by following a path</div>
+          </div>
+          <div class="side gr" data-show="2" data-anim="up" style="--delay:.25s">
+            <h3>"What are the main complaints?"</h3>
+            <svg class="pic" viewBox="0 0 360 170" preserveAspectRatio="xMidYMid meet" aria-label="Every report answers; the best answers are merged">
+              <g data-show="2" style="--delay:.5s"><rect class="card" x="10" y="14" width="76" height="34" rx="6" stroke="var(--c-danger)"/><text class="sm" x="48" y="35" text-anchor="middle">Workload 88</text></g>
+              <g data-show="2" style="--delay:.7s"><rect class="card" x="96" y="14" width="76" height="34" rx="6" stroke="var(--c-history)"/><text class="sm" x="134" y="35" text-anchor="middle">Tools 81</text></g>
+              <g data-show="2" style="--delay:.9s"><rect class="card" x="182" y="14" width="76" height="34" rx="6" stroke="var(--c-system)"/><text class="sm" x="220" y="35" text-anchor="middle">Career 64</text></g>
+              <g data-show="2" style="--delay:1.1s"><rect class="card" x="268" y="14" width="80" height="34" rx="6" stroke="var(--c-tools)" stroke-dasharray="4 3"/><text class="sm" x="308" y="35" text-anchor="middle">Parking 6</text></g>
+              <g data-show="2" style="--delay:1.6s"><line class="e" x1="48" y1="50" x2="170" y2="104"/><line class="e" x1="134" y1="50" x2="175" y2="104"/><line class="e" x1="220" y1="50" x2="185" y2="104"/></g>
+              <g data-show="2" style="--delay:2s"><rect class="card" x="105" y="104" width="150" height="56" rx="8" stroke="var(--c-question)"/><text x="180" y="124" text-anchor="middle">1 Workload</text><text x="180" y="140" text-anchor="middle">2 Remote tools</text><text x="180" y="155" text-anchor="middle" class="sm">3 Career …</text></g>
+            </svg>
+            <div class="cap" data-show="2" style="--delay:2.3s"><b style="color:var(--c-history)">The big picture</b>, by merging summaries</div>
+          </div>
+        </div>
+        <div></div>
+      </div>
+
+      <!-- 3: which one answers this? -->
+      <div class="layer explain" data-show="3">
+        <div><h2>Which one answers this?</h2></div>
+        <div class="sorter">
+          <div class="qrow" data-show="3" data-anim="left"><div class="q">Who approves Omar's carry-over request?</div><div class="a" data-show="3" style="--ac:var(--p-kag);--delay:.5s">KAG</div></div>
+          <div class="qrow" data-show="3" data-anim="left" style="--delay:.8s"><div class="q">What are the main complaints in three years of feedback?</div><div class="a" style="--ac:var(--c-history)" data-show="3">GraphRAG</div></div>
+          <div class="qrow" data-show="3" data-anim="left" style="--delay:1.6s"><div class="q">How many teams average more than 10 unused leave days?</div><div class="a" style="--ac:var(--p-kag)" data-show="3">KAG</div></div>
+          <div class="qrow" data-show="3" data-anim="left" style="--delay:2.4s"><div class="q">What themes come up in exit interviews?</div><div class="a" style="--ac:var(--c-history)" data-show="3">GraphRAG</div></div>
+          <div class="qrow" data-show="3" data-anim="left" style="--delay:3.2s"><div class="q">How do I set up the VPN on a new laptop?</div><div class="a" style="--ac:var(--p-rag)" data-show="3">Plain RAG</div></div>
+        </div>
+        <div class="foot">Connected facts, rules or numbers: KAG. Themes across everything: GraphRAG. One passage holds the answer: plain RAG is enough.</div>
+      </div>
+
+      <!-- 4: effort -->
+      <div class="layer explain" data-show="4">
+        <div><h2>What each one costs</h2></div>
+        <div class="dots">
+          <span></span><span class="h kag">KAG</span><span class="h gr">GraphRAG</span>
+          <span class="r" data-show="4">Experts design a schema</span>
+          <span class="v kag" data-show="4" style="--delay:.15s"><i class="f"></i><i class="f"></i><i class="f"></i><span>required</span></span>
+          <span class="v gr" data-show="4" style="--delay:.25s"><i></i><i></i><i></i><span>not needed</span></span>
+          <span class="r" data-show="4" style="--delay:.5s">LLM work to build</span>
+          <span class="v kag" data-show="4" style="--delay:.65s"><i class="f"></i><i class="f"></i><i class="f"></i><span>extract, align</span></span>
+          <span class="v gr" data-show="4" style="--delay:.75s"><i class="f"></i><i class="f"></i><i class="f"></i><span>extract, summarise, reports</span></span>
+          <span class="r" data-show="4" style="--delay:1s">LLM calls per question</span>
+          <span class="v kag" data-show="4" style="--delay:1.15s"><i class="f"></i><i class="f"></i><i></i><span>plan, read, answer</span></span>
+          <span class="v gr" data-show="4" style="--delay:1.25s"><i class="f"></i><i class="f"></i><i class="f"></i><span>one per batch of reports</span></span>
+          <span class="r" data-show="4" style="--delay:1.5s">Keeping it current</span>
+          <span class="v kag" data-show="4" style="--delay:1.65s"><i class="f"></i><i></i><i></i><span>re-extract, re-align</span></span>
+          <span class="v gr" data-show="4" style="--delay:1.75s"><i class="f"></i><i></i><i></i><span>communities shift</span></span>
+        </div>
+        <div class="foot">Filled dots mean more. Our reading of the two papers and projects, not measurements.</div>
+      </div>
+
+      <!-- 5: what the papers report -->
+      <div class="layer explain" data-show="5">
+        <div><h2>What the papers report</h2></div>
+        <div class="rep2">
+          <div class="side kag" data-show="5" data-anim="up">
+            <h3>KAG · multi-hop questions (F1)</h3>
+            <div class="bars">
+              <div class="bar"><span>HotpotQA</span><i class="t" style="--bc:var(--p-kag);width:76.2%;--d:.3s"></i><b>76.2</b></div>
+              <div class="bar"><span>best baseline</span><i class="t" style="--bc:var(--ink-3);width:63.7%;--d:.4s"></i><b>63.7</b></div>
+              <div class="bar"><span>2Wiki</span><i class="t" style="--bc:var(--p-kag);width:76.2%;--d:.6s"></i><b>76.2</b></div>
+              <div class="bar"><span>best baseline</span><i class="t" style="--bc:var(--ink-3);width:57.1%;--d:.7s"></i><b>57.1</b></div>
+              <div class="bar"><span>MuSiQue</span><i class="t" style="--bc:var(--p-kag);width:48.7%;--d:.9s"></i><b>48.7</b></div>
+              <div class="bar"><span>best baseline</span><i class="t" style="--bc:var(--ink-3);width:36.5%;--d:1s"></i><b>36.5</b></div>
+            </div>
+            <div class="caveat">Against IRCoT + HippoRAG, same LLM. The best setting leans on chunk retrieval too.</div>
+          </div>
+          <div class="side gr" data-show="5" data-anim="up" style="--delay:.25s">
+            <h3>GraphRAG · preferred over plain RAG</h3>
+            <div class="bignum" data-show="5" style="--delay:.6s">72–83%</div>
+            <div class="caveat" data-show="5" style="--delay:.7s">of comparisons on comprehensiveness, and 62–82% on diversity, for whole-collection questions over about a million tokens.</div>
+            <div class="caveat" data-show="5" style="--delay:.9s">Judged by an LLM, with no reference answers.</div>
+          </div>
+        </div>
+        <div class="foot">The two were never benchmarked against each other.</div>
+      </div>
+
+    </section>
+  </main>
+</div>
+
+<script src="assets/session.js?v=8"></script>
+<script src="assets/deck.js?v=6"></script>
+<script>
+  Deck.init({
+    groupColors: { "Compare": "var(--p-kag)" },
+    steps: [
+      { title: "The same start", body: `<p>Both use an LLM to turn documents into a <strong>graph</strong>. Then they split.</p>`, notes: `<ul><li>Keep this page light: the details were on 08 and 09.</li></ul>` },
+      { group: "Compare", title: "What each one builds", body: `<p>KAG: <strong>typed facts</strong> under a schema. GraphRAG: <strong>communities</strong>, each with a report.</p>`, notes: `<ul><li>Point at the schema card on the left; GraphRAG has none.</li></ul>` },
+      { group: "Compare", title: "How each one answers", body: `<p>KAG <strong>follows a path</strong> to one exact answer. GraphRAG <strong>merges summaries</strong> into the big picture.</p>`, notes: `<ul><li>Same documents could feed both; the question decides.</li></ul>` },
+      { group: "Compare", title: "Which one answers this?", body: `<p>Five questions, sorted by the kind of answer they need.</p>`, notes: `<ul><li>Ask the room before each answer appears.</li></ul>` },
+      { group: "Compare", title: "What each one costs", body: `<p>KAG needs <strong>experts</strong> for the schema. Both need a lot of <strong>LLM work</strong> to build and to keep current.</p>`, notes: `<ul><li>The dots are a judgement, not a measurement.</li></ul>` },
+      { group: "Compare", title: "What the papers report", body: `<p>Each beat plain retrieval on its own kind of question. They were <strong>never compared</strong> with each other.</p>`,
+        notes: `<ul><li>KAG: Table 8, DeepSeek-V2, against IRCoT + HippoRAG. GraphRAG: LLM-judged head-to-head comparisons, so treat as directional.</li><li>Next: where both stop working.</li></ul>` },
+    ],
+  });
+</script>
+</body>
+</html>

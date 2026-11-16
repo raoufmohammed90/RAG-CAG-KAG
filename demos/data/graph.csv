@@ -1,0 +1,21 @@
+subject,relation,object
+Omar Khalid,member of,Sales team
+Rania Aziz,member of,Sales team
+Lina Haddad,member of,Analytics team
+Yousef Nasser,member of,Engineering team
+Maya Farouk,member of,Engineering team
+Noura Saeed,member of,Finance team
+Sales team,line manager is,Sara Ahmed
+Analytics team,line manager is,Huda Rahman
+Engineering team,line manager is,Karim Saleh
+Finance team,line manager is,Bilal Qasim
+Sales team,based in,Dubai office
+Engineering team,based in,Abu Dhabi office
+Sara Ahmed,has role,line manager
+Huda Rahman,has role,line manager
+Karim Saleh,has role,line manager
+Bilal Qasim,has role,line manager
+Leave carry-over,approved by,line manager
+Leave carry-over,max days,5
+Leave carry-over,deadline,15 December
+Annual leave,days per year,22

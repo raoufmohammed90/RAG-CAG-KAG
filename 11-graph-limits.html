@@ -1,0 +1,1059 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Where Graphs Stop Working</title>
+<link rel="stylesheet" href="assets/deck.css?v=8">
+<style>
+  /* =================== scene: client, network, server =================== */
+  .scene {
+    position: absolute;
+    inset: 0;
+    padding: 18px 22px 14px;
+    display: grid;
+    grid-template-columns: minmax(0, .8fr) minmax(110px, .34fr) minmax(0, 1.6fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    row-gap: 12px;
+  }
+
+  .box {
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--card);
+    border: 1.5px solid var(--frame);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .box-head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 9px 14px 8px;
+    border-bottom: 1.5px solid var(--rule);
+    font-family: var(--font-ui);
+  }
+  .box-head b { font-size: 1.05em; }
+  .box-head span { color: var(--ink-2); font-size: .8em; }
+  .box.client { --tint: var(--c-history); }
+  .box.server { --tint: var(--l3); }
+  .box.client, .box.server {
+    background: color-mix(in srgb, var(--tint) 5%, var(--card));
+    border-color: color-mix(in srgb, var(--tint) 50%, var(--frame));
+  }
+  .box.client .box-head, .box.server .box-head {
+    background: color-mix(in srgb, var(--tint) 13%, transparent);
+    border-bottom-color: color-mix(in srgb, var(--tint) 30%, var(--rule));
+  }
+
+  /* ---------- client: the chat app ---------- */
+  .sys-chip {
+    margin: 10px 10px 0;
+    padding: 5px 9px;
+    border: 1.5px dashed var(--c-system);
+    border-radius: 6px;
+    font-family: var(--font-ui);
+    font-size: .76em;
+    color: var(--ink-2);
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .sys-chip b { color: var(--ink); font-weight: 600; white-space: nowrap; }
+  .sys-chip .sq { width: 10px; height: 10px; border-radius: 2px; background: var(--c-system); flex: none; }
+  .sys-chip.pulse { animation: pulse 1.2s var(--ease) 2; }
+  @keyframes pulse { 50% { background: color-mix(in srgb, var(--c-system) 20%, transparent); } }
+
+  .conv-label {
+    margin: 9px 10px 0;
+    font-family: var(--font-ui);
+    font-size: .74em;
+    color: var(--ink-2);
+    display: flex;
+    gap: 7px;
+    align-items: center;
+  }
+  .conv-label::before { content: ""; width: 10px; height: 10px; border-radius: 2px; background: var(--c-history); flex: none; }
+
+  .chat {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 7px;
+    margin: 6px 7px 7px;
+    padding: 7px 5px;
+    border-radius: 8px;
+    border: 1.5px solid transparent;
+    transition: border-color .4s, background .4s;
+  }
+  .chat.stored { border-color: var(--c-history); background: color-mix(in srgb, var(--c-history) 7%, transparent); }
+  .chat.flash { animation: flash 1.1s var(--ease) 2; }
+  @keyframes flash { 50% { background: color-mix(in srgb, var(--c-history) 22%, transparent); } }
+
+  .msg {
+    max-width: 90%;
+    padding: 6px 10px;
+    border-radius: 10px;
+    font-size: .8em;
+    line-height: 1.4;
+    flex: none;
+  }
+  .msg.user { align-self: flex-end; background: var(--ink); color: var(--card); border-bottom-right-radius: 3px; }
+  .msg.bot { align-self: flex-start; background: var(--sheet); border: 1.5px solid var(--rule); border-bottom-left-radius: 3px; }
+  .msg.err { border-color: var(--c-danger); color: var(--c-danger); }
+  .msg.more {
+    align-self: stretch;
+    max-width: none;
+    text-align: center;
+    font-family: var(--font-ui);
+    font-size: .74em;
+    color: var(--ink-2);
+    padding: 4px 0;
+    border-top: 1.5px dashed var(--rule);
+    border-bottom: 1.5px dashed var(--rule);
+    border-radius: 0;
+  }
+  .msg.file { display: flex; align-items: center; gap: 9px; font-family: var(--font-ui); }
+  .msg.file small { display: block; opacity: .75; font-size: .85em; }
+  .file-ic {
+    width: 18px; height: 23px; flex: none;
+    border: 1.5px solid currentColor;
+    border-radius: 2px;
+    background: linear-gradient(currentColor, currentColor) 3px 6px / 9px 1.5px no-repeat,
+                linear-gradient(currentColor, currentColor) 3px 10px / 9px 1.5px no-repeat,
+                linear-gradient(currentColor, currentColor) 3px 14px / 6px 1.5px no-repeat;
+  }
+  .msg[hidden] { display: none; }
+  .msg.enter { animation: msgIn .4s var(--ease) both; }
+  @keyframes msgIn {
+    from { opacity: 0; transform: translateY(10px) scale(.97); }
+    to { opacity: 1; transform: none; }
+  }
+
+  .input {
+    margin: 0 10px 10px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    border: 1.5px solid var(--rule);
+    border-radius: 8px;
+    padding: 5px 5px 5px 10px;
+    min-height: 38px;
+    font-size: .8em;
+  }
+  .input .txt { flex: 1; min-width: 0; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .input .txt:empty:not(.typing)::before { content: "Ask the helpdesk"; color: var(--ink-3); }
+  .input .txt.typing::after {
+    content: "";
+    display: inline-block;
+    width: 2px; height: 1.05em;
+    background: var(--ink);
+    margin-left: 1px;
+    vertical-align: -2px;
+    animation: blink .8s steps(1) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+  .input .send {
+    font-family: var(--font-ui);
+    font-weight: 600;
+    font-size: .9em;
+    background: var(--ink);
+    color: var(--card);
+    border-radius: 5px;
+    padding: 4px 10px;
+    transition: transform .15s;
+  }
+  .input .send.press { transform: scale(.88); }
+
+  /* ---------- network between client and server ---------- */
+  .wire { position: relative; }
+  .lane {
+    position: absolute;
+    left: 4px; right: 4px;
+    height: 2px;
+    background: repeating-linear-gradient(90deg, var(--ink-3) 0 6px, transparent 6px 12px);
+  }
+  .lane.req { top: 30%; }
+  .lane.res { top: 70%; }
+  .lane.req::after, .lane.res::after { content: ""; position: absolute; top: -5px; border: 6px solid transparent; }
+  .lane.req::after { right: -6px; border-left: 8px solid var(--ink-3); border-right: 0; }
+  .lane.res::after { left: -6px; border-right: 8px solid var(--ink-3); border-left: 0; }
+  .lane span {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: var(--font-ui);
+    font-size: .74em;
+    color: var(--ink-3);
+    white-space: nowrap;
+  }
+  .lane.req span { bottom: 8px; }
+  .lane.res span { top: 8px; }
+  .wire-cap {
+    position: absolute;
+    left: 0; right: 0; top: 50%;
+    transform: translateY(-50%);
+    text-align: center;
+    font-family: var(--font-ui);
+    font-size: .74em;
+    color: var(--ink-3);
+  }
+
+  .packet {
+    position: absolute;
+    top: 30%;
+    width: 184px;
+    transform: translateY(-50%) scale(.9);
+    opacity: 0;
+    background: var(--card);
+    border: 1.5px solid var(--frame);
+    border-radius: 8px;
+    box-shadow: 4px 4px 0 var(--shadow);
+    padding: 7px 10px 6px;
+    font-family: var(--font-ui);
+    font-size: .74em;
+    z-index: 5;
+    left: -70px;
+    transition: left 1.15s cubic-bezier(.55, .05, .3, 1), opacity .35s, transform .35s var(--ease);
+  }
+  .packet.on { opacity: 1; transform: translateY(-50%) scale(1); }
+  .packet.at-server { left: calc(100% - 110px); }
+  .packet.instant { transition: none; }
+  .packet .ph { font-weight: 700; margin-bottom: 4px; display: flex; justify-content: space-between; }
+  .packet .ph span { color: var(--ink-2); font-weight: 400; }
+  .packet .row { display: grid; grid-template-columns: 10px 1fr auto; gap: 7px; align-items: center; padding: 1px 0; }
+  .packet .row i { width: 10px; height: 10px; border-radius: 2px; }
+  .packet .row b { font-weight: 400; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .packet .tot {
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1.5px solid var(--rule);
+    display: flex;
+    justify-content: space-between;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .err-packet {
+    position: absolute;
+    top: 70%;
+    left: calc(100% - 110px);
+    width: 170px;
+    transform: translateY(-50%);
+    opacity: 0;
+    background: var(--card);
+    border: 2px solid var(--c-danger);
+    color: var(--c-danger);
+    border-radius: 8px;
+    padding: 6px 9px;
+    font-family: var(--font-ui);
+    font-size: .74em;
+    font-weight: 600;
+    z-index: 5;
+    transition: left 1s cubic-bezier(.55, .05, .3, 1), opacity .3s;
+  }
+  .err-packet.on { opacity: 1; }
+  .err-packet.at-client { left: -60px; }
+  .err-packet.instant { transition: none; }
+
+  .stream { position: absolute; top: 70%; left: 4px; right: 4px; height: 0; opacity: 0; transition: opacity .3s; }
+  .stream.on { opacity: 1; }
+  .stream i {
+    position: absolute;
+    top: -6px;
+    width: 12px; height: 12px;
+    border-radius: 2px;
+    background: var(--c-response);
+    animation: flow 1s linear infinite;
+  }
+  .stream i:nth-child(2) { animation-delay: .25s; }
+  .stream i:nth-child(3) { animation-delay: .5s; }
+  .stream i:nth-child(4) { animation-delay: .75s; }
+  .solo {
+    position: absolute;
+    top: calc(70% - 6px);
+    left: calc(100% - 12px);
+    width: 12px; height: 12px;
+    border-radius: 2px;
+    background: var(--c-response);
+    opacity: 0;
+    z-index: 4;
+  }
+  .solo.go { animation: flow 1s linear 1 both; }
+  @keyframes flow {
+    from { left: calc(100% - 12px); opacity: 0; }
+    15% { opacity: 1; }
+    85% { opacity: 1; }
+    to { left: 0; opacity: 0; }
+  }
+
+  /* =================== server: the model =================== */
+  .srv {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) minmax(92px, auto);
+    grid-template-rows: auto minmax(0, 1fr) minmax(0, .8fr) auto auto;
+    grid-template-areas:
+      "wl   status status"
+      "win  net    out"
+      "win  tray   tray"
+      "win  cache  cache"
+      "wu   meta   meta";
+    column-gap: 14px;
+    row-gap: 8px;
+    padding: 10px 14px 10px;
+    font-family: var(--font-ui);
+  }
+  .area-label { font-weight: 600; font-size: .8em; line-height: 1.2; }
+  .area-label small { display: block; font-weight: 400; color: var(--ink-3); }
+
+  /* context window column */
+  .wl { grid-area: wl; align-self: end; }
+  /* the column keeps 14% of its height free below the window, so an overflow always has room */
+  .col {
+    grid-area: win;
+    position: relative;
+    width: clamp(92px, 7.4vw, 140px);
+  }
+  .cw-box {
+    position: absolute;
+    left: 0; right: 0; top: 0;
+    height: 86%;
+    border: 2px solid var(--frame);
+    border-radius: 6px;
+    background: var(--cell-empty);
+    transition: border-color .3s;
+  }
+  .col.over .cw-box { border-color: var(--c-danger); }
+  .wu { grid-area: wu; font-size: .76em; color: var(--ink-2); }
+  .wu b { color: var(--ink); font-size: 1.3em; font-variant-numeric: tabular-nums; }
+  .wu.over b { color: var(--c-danger); }
+
+  .seg {
+    position: absolute;
+    left: 3px; right: 3px;
+    min-height: 5px;
+    border-radius: 3px;
+    color: var(--on-color);
+    font-size: .66em;
+    font-weight: 600;
+    line-height: 1.2;
+    padding: 3px 5px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    transition:
+      height .6s var(--ease) var(--d, 0s),
+      opacity .4s var(--ease) var(--d, 0s),
+      transform .4s var(--ease) var(--d, 0s);
+  }
+  .seg.slow { transition: height var(--grow, 1.8s) linear; }
+  .seg.leave { opacity: 0; transform: translateX(26px); }
+  .seg.system { background: var(--c-system); }
+  .seg.history { background: var(--c-history); }
+  .seg.docs { background: var(--c-docs); }
+  .seg.question { background: var(--c-question); }
+  .seg.response { background: var(--c-response); }
+  .seg.room {
+    background: repeating-linear-gradient(135deg,
+      color-mix(in srgb, var(--c-response) 30%, transparent) 0 3px, transparent 3px 6px);
+    border: 1.5px dashed var(--c-response);
+    color: var(--c-response);
+  }
+  .seg { z-index: 1; }
+  .over-zone {
+    position: absolute;
+    left: 0; right: 0;
+    top: 86%;
+    height: 0;
+    border: 2px dashed var(--c-danger);
+    border-top: 0;
+    border-radius: 0 0 6px 6px;
+    background: repeating-linear-gradient(135deg,
+      color-mix(in srgb, var(--c-danger) 30%, transparent) 0 4px, transparent 4px 8px);
+    opacity: 0;
+    z-index: 0;
+    transition: opacity .4s, height .6s var(--ease);
+  }
+  .col.over .over-zone { opacity: 1; }
+
+  /* status line */
+  .status { grid-area: status; display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: .86em; align-self: end; }
+  .status i { width: 10px; height: 10px; border-radius: 50%; background: var(--ink-3); flex: none; }
+  .status.reading i { background: var(--ink); animation: beat .7s ease-in-out infinite; }
+  .status.writing i { background: var(--c-response); animation: beat .5s ease-in-out infinite; }
+  .status.error { color: var(--c-danger); }
+  .status.error i { background: var(--c-danger); }
+  .status.idle { color: var(--ink-2); font-weight: 400; }
+  .status.idle i { background: var(--accent); }
+  @keyframes beat { 50% { transform: scale(1.5); opacity: .6; } }
+
+  /* the neural network */
+  .net { grid-area: net; position: relative; min-height: 0; }
+  .net svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+  /* each layer has its own colour; the reading wave takes it, the writing pass is pink */
+  .net .n0, .net .e0, .net .lt0 { --lc: var(--l1); }
+  .net .n1, .net .e1, .net .lt1 { --lc: var(--l2); }
+  .net .n2, .net .e2, .net .lt2 { --lc: var(--l3); }
+  .net .n3, .net .e3, .net .lt3, .net .e4 { --lc: var(--l4); }
+  .net .n, .net .e { --wave: var(--lc); }
+  .net.writing .n, .net.writing .e { --wave: var(--c-response); }
+  .net .e { stroke: color-mix(in srgb, var(--lc) 22%, var(--rule)); stroke-width: 1; transition: stroke .2s, stroke-width .2s; }
+  .net .e.hot { stroke: var(--wave); stroke-width: 1.7; }
+  .net .n { fill: var(--card); stroke: color-mix(in srgb, var(--lc) 65%, var(--frame)); stroke-width: 1.8; transition: fill .2s, stroke .2s; }
+  .net .n.hot { fill: var(--wave); stroke: var(--wave); filter: drop-shadow(0 0 4px color-mix(in srgb, var(--wave) 70%, transparent)); }
+  .net .lt { font-family: var(--font-ui); font-size: 11px; font-weight: 700; fill: var(--lc); text-anchor: middle; }
+  .net .loop { fill: none; stroke: var(--rule); stroke-width: 1.5; stroke-dasharray: 4 4; transition: stroke .2s; }
+  .net .loop.hot { stroke: var(--c-response); animation: dash .5s linear infinite; }
+  .net .loop-lab { font-family: var(--font-ui); font-size: 10px; fill: var(--ink-3); text-anchor: middle; }
+  @keyframes dash { to { stroke-dashoffset: -16; } }
+  .net .ft { opacity: 0; }
+  .net.feeding .ft { animation: feed .8s linear infinite; }
+  @keyframes feed {
+    from { transform: translateX(-6px); opacity: 0; }
+    25% { opacity: 1; }
+    to { transform: translateX(46px); opacity: 0; }
+  }
+  .net.busy .n { animation: busy .24s ease-in-out infinite alternate; }
+  .net.busy .n:nth-of-type(3n) { animation-delay: .08s; }
+  .net.busy .n:nth-of-type(3n+1) { animation-delay: .16s; }
+  @keyframes busy { to { fill: var(--c-response); stroke: var(--c-response); } }
+  .net-note { position: absolute; left: 0; right: 0; bottom: -2px; text-align: center; font-size: .66em; color: var(--ink-3); }
+
+  /* output */
+  .out { grid-area: out; align-self: center; text-align: center; }
+  .outbox {
+    border: 2px solid var(--rule);
+    border-radius: 8px;
+    padding: 7px 8px 8px;
+    background: var(--card);
+    transition: border-color .3s;
+  }
+  .outbox.live { border-color: var(--c-response); }
+  .outbox small { display: block; font-size: .7em; color: var(--ink-2); }
+  .outbox b {
+    display: block;
+    min-height: 1.25em;
+    font-size: 1.45em;
+    line-height: 1.25;
+    color: var(--c-response);
+    white-space: pre;
+  }
+  .outbox b.pop { animation: pop .3s var(--ease); }
+  @keyframes pop { from { transform: scale(.6); opacity: 0; } to { transform: none; opacity: 1; } }
+
+  /* working values tray */
+  .tray { grid-area: tray; min-height: 0; display: flex; flex-direction: column; gap: 5px; }
+  .tray-head { display: flex; align-items: baseline; gap: 10px; font-size: .78em; white-space: nowrap; overflow: hidden; }
+  .tray-head b { font-weight: 600; }
+  .tray-head span { color: var(--ink-3); }
+  .tray-head .same-note { color: var(--ink); display: none; align-items: center; gap: 6px; font-weight: 600; animation: capIn .4s var(--ease) both; }
+  .tray.same .tray-head .sub { display: none; }
+  .tray-head .same-note::before { content: ""; width: 16px; height: 10px; border: 2px dashed var(--ink); border-radius: 3px; }
+  .tray.same .same-note { display: inline-flex; }
+  .tray-rows {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 50px minmax(0, 1fr);
+    grid-template-rows: repeat(4, minmax(0, 1fr));
+    row-gap: 4px;
+    column-gap: 8px;
+    border: 1.5px dashed var(--rule);
+    border-radius: 6px;
+    padding: 6px 8px;
+  }
+  .tlab { font-size: .66em; font-weight: 700; color: var(--lc); align-self: center; text-align: right; white-space: nowrap; }
+  .tlab::before {
+    content: "";
+    display: inline-block;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--lc);
+    margin-right: 5px;
+    vertical-align: 1px;
+  }
+  .tsegs { display: flex; gap: 2px; min-height: 0; border-radius: 3px; transition: box-shadow .2s; }
+  .tsegs.read { box-shadow: 0 0 0 2px var(--c-response); }
+  .tseg {
+    --k: var(--ink-3);
+    height: 100%;
+    flex: none;
+    border-radius: 2px;
+    background-color: var(--k);
+    background-image: repeating-linear-gradient(90deg, transparent 0 3px, color-mix(in srgb, var(--card) 45%, transparent) 3px 4px);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform .45s var(--ease) var(--d, 0s), width var(--wdur, .5s) linear, opacity .4s;
+  }
+  .tseg.on { transform: scaleX(1); }
+  .tseg.leave { opacity: 0; }
+  .tray.instant .tseg { transition: none; }
+  .tseg.system { --k: var(--c-system); }
+  .tseg.history { --k: var(--c-history); }
+  .tseg.question { --k: var(--c-question); }
+  .tseg.response { --k: var(--c-response); }
+  .same-wrap { grid-area: 1 / 2 / span 4 / 3; position: relative; pointer-events: none; }
+  .same-box {
+    position: absolute;
+    left: -4px; top: -4px; bottom: -4px;
+    border: 2px dashed var(--ink);
+    border-radius: 5px;
+    opacity: 0;
+    transition: opacity .5s;
+  }
+  .tray.same .same-box { opacity: 1; }
+  .tray-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: .72em; color: var(--ink-2); min-height: 1.2em; }
+  .tray-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .tray-legend i { width: 9px; height: 9px; border-radius: 2px; }
+  .tray-legend b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  /* counters */
+  .meta { grid-area: meta; display: flex; align-items: baseline; gap: 6px 20px; flex-wrap: wrap; font-size: .76em; color: var(--ink-2); }
+  .meta b { color: var(--ink); font-size: 1.45em; font-variant-numeric: tabular-nums; margin-left: 4px; }
+  .meta .memo { margin-left: auto; }
+  .meta .memo strong { color: var(--ink); }
+  .memo.flash strong { animation: memoFlash 1.2s var(--ease) 2; }
+  @keyframes memoFlash { 50% { color: var(--c-danger); } }
+
+  /* ---------- callout row under the scene ---------- */
+  .callout { grid-column: 1 / -1; position: relative; min-height: 60px; }
+  .callout > div { position: absolute; inset: 0; display: flex; align-items: center; gap: 18px; }
+  .callout .big {
+    font-family: var(--font-ui);
+    font-weight: 700;
+    font-size: clamp(19px, 1.6vw, 29px);
+    line-height: 1.15;
+  }
+  .callout .small { color: var(--ink-2); font-size: .9em; max-width: 60em; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  .chip {
+    font-family: var(--font-ui);
+    font-size: .9em;
+    padding: 2px 8px 3px;
+    border-radius: 4px;
+    border: 1.5px solid var(--c-question);
+    background: color-mix(in srgb, var(--c-question) 14%, var(--card));
+    white-space: pre;
+  }
+  .chip:nth-child(even) { background: var(--card); }
+  .callout .eq { font-family: var(--font-ui); color: var(--ink-2); }
+  .callout .eq b { color: var(--ink); }
+
+  /* =================== chart layer (last step) =================== */
+  .chart {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    gap: 12px;
+    font-family: var(--font-ui);
+  }
+  .chart-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px 24px; flex-wrap: wrap; }
+  .chart-head h2 { margin: 0; font-size: 1.25em; }
+  .chart-key { display: flex; gap: 18px; font-size: .82em; color: var(--ink-2); flex-wrap: wrap; }
+  .chart-key span { display: inline-flex; align-items: center; gap: 7px; }
+  .chart-key i { width: 14px; height: 14px; border-radius: 2px; }
+  .hatch {
+    background: repeating-linear-gradient(135deg, var(--ink-3) 0 3px, color-mix(in srgb, var(--ink-3) 35%, transparent) 3px 6px);
+  }
+  .plot { position: relative; min-height: 0; margin-left: 44px; border-left: 1.5px solid var(--frame); border-bottom: 1.5px solid var(--frame); }
+  .gridline { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--rule); }
+  .gridline span { position: absolute; right: calc(100% + 8px); top: -.65em; font-size: .72em; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .bars { position: absolute; inset: 0 6px 0 6px; display: flex; align-items: flex-end; gap: 5px; }
+  .bar {
+    flex: 1;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    transform: scaleY(0);
+    transform-origin: bottom;
+    transition: transform .55s var(--ease) calc(var(--i) * 45ms + .15s);
+  }
+  .chart.is-on .bar { transform: scaleY(1); }
+  .bar .new { background: var(--c-question); border-radius: 2px 2px 0 0; }
+  .xaxis { margin-left: 50px; margin-right: 6px; display: flex; gap: 5px; font-size: .72em; color: var(--ink-3); }
+  .xaxis span { flex: 1; text-align: center; font-variant-numeric: tabular-nums; }
+  .totals { display: flex; gap: 16px 40px; align-items: flex-end; flex-wrap: wrap; border-top: 1.5px solid var(--rule); padding-top: 12px; }
+  .totals .t b { display: block; font-size: clamp(26px, 2.4vw, 42px); line-height: 1; font-variant-numeric: tabular-nums; }
+  .totals .t span { font-size: .82em; color: var(--ink-2); }
+  .totals .t.alt b { color: var(--ink-2); }
+  .totals .foot { margin-left: auto; font-size: .76em; color: var(--ink-3); max-width: 22em; font-family: var(--font-text); }
+
+  /* =================== page 02: prompt caching =================== */
+
+  /* text served from cache: outlined in the cache colour */
+  .seg.hit { box-shadow: inset 0 0 0 2.5px var(--c-cache); }
+  .seg.date { background: var(--c-danger); }
+  .tseg.date { --k: var(--c-danger); }
+  .tseg.docs { --k: var(--c-docs); }
+  .tseg.cached { box-shadow: 0 0 0 2px var(--c-cache); }
+  .tseg.fromcache { animation: fromCache 1s var(--ease); }
+  @keyframes fromCache {
+    0% { transform: translateY(30px) scaleX(1); opacity: 0; }
+    60% { opacity: 1; }
+    100% { transform: none; }
+  }
+
+  /* the prompt cache: kept between requests */
+  .cache {
+    grid-area: cache;
+    border: 2px dashed color-mix(in srgb, var(--c-cache) 55%, var(--rule));
+    border-radius: 8px;
+    padding: 6px 10px 8px;
+    display: grid;
+    gap: 5px;
+    transition: border-color .3s, background .3s;
+  }
+  .cache.has { border-style: solid; border-color: var(--c-cache); background: color-mix(in srgb, var(--c-cache) 7%, transparent); }
+  .cache-head { display: flex; align-items: baseline; gap: 10px; font-size: .78em; white-space: nowrap; overflow: hidden; }
+  .cache-head b { color: var(--c-cache); font-weight: 700; }
+  .cache-head span { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; }
+  .cache-head .cache-flag, .cache-head .ttl, .cache-head b { flex: none; }
+  .cache-head .ttl { margin-left: auto; color: var(--ink); font-weight: 700; font-variant-numeric: tabular-nums; }
+  .cache-head .ttl.low { color: var(--c-danger); }
+  .cache-bar { display: flex; gap: 2px; height: 16px; }
+  .cseg {
+    --k: var(--ink-3);
+    height: 100%;
+    border-radius: 2px;
+    background-color: var(--k);
+    background-image: repeating-linear-gradient(90deg, transparent 0 3px, color-mix(in srgb, var(--card) 45%, transparent) 3px 4px);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform .6s var(--ease) var(--d, 0s), opacity .5s;
+  }
+  .cseg.on { transform: scaleX(1); }
+  .cseg.instant { transition: none; }
+  .cseg.leave { opacity: 0; }
+  .cseg.system { --k: var(--c-system); }
+  .cseg.docs { --k: var(--c-docs); }
+  .cseg.history { --k: var(--c-history); }
+  .cseg.question { --k: var(--c-question); }
+  .cseg.date { --k: var(--c-danger); }
+  .cache.hit { animation: cacheHit 1.1s var(--ease); }
+  @keyframes cacheHit { 40% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--c-cache) 35%, transparent); } }
+  .cache.miss { animation: cacheMiss .7s var(--ease); border-color: var(--c-danger); }
+  @keyframes cacheMiss {
+    20% { transform: translateX(-5px); }
+    40% { transform: translateX(4px); }
+    60% { transform: translateX(-3px); }
+    80% { transform: translateX(2px); }
+  }
+  .cache-flag {
+    font-size: .74em;
+    font-weight: 700;
+    border-radius: 999px;
+    padding: 0 8px 1px;
+    opacity: 0;
+    transition: opacity .3s;
+  }
+  .cache-flag.on { opacity: 1; }
+  .cache-flag.hit { color: var(--on-color); background: var(--c-cache); }
+  .cache-flag.miss { color: #fff; background: var(--c-danger); }
+  .cache-flag.write { color: var(--c-cache); border: 1.5px solid var(--c-cache); }
+
+  /* billing line */
+  .meta .bill b { color: var(--c-cache); }
+  .meta .bill small { color: var(--ink-3); margin-left: 4px; }
+
+  /* the cache marker inside a request packet */
+  .packet .mk {
+    margin: 3px 0;
+    border-top: 2px dashed var(--c-cache);
+    color: var(--c-cache);
+    font-size: .86em;
+    font-weight: 700;
+    padding-top: 1px;
+  }
+  .packet .row.d i { background: var(--c-danger); }
+
+  /* the app's stable beginning, in the client */
+  .sys-chip .policy { color: var(--c-docs); font-weight: 600; }
+
+  /* clock shown while time passes */
+  .clock {
+    position: absolute;
+    left: 36%; top: 42%;
+    transform: translate(-50%, -50%) scale(.9);
+    z-index: 6;
+    background: var(--card);
+    border: 2px solid var(--c-cache);
+    border-radius: 12px;
+    padding: 10px 18px;
+    text-align: center;
+    font-family: var(--font-ui);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .3s, transform .3s var(--ease);
+  }
+  .clock.on { opacity: 1; transform: translate(-50%, -50%); }
+  .clock b { display: block; font-size: 1.8em; font-variant-numeric: tabular-nums; }
+  .clock span { font-size: .8em; color: var(--ink-2); }
+
+  /* =================== explainer layers =================== */
+  .explain {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    gap: 18px;
+    font-family: var(--font-ui);
+  }
+  .explain h2 { margin: 0; font-size: 1.3em; }
+  .explain .lead { margin: 4px 0 0; font-family: var(--font-text); color: var(--ink-2); max-width: 54em; }
+  .explain .foot { font-size: .78em; color: var(--ink-3); font-family: var(--font-text); }
+
+  .reqs { display: grid; gap: 26px; align-content: center; }
+  .req { display: grid; grid-template-columns: 9.5em minmax(0, 1fr); gap: 16px; align-items: center; }
+  .req-name { font-weight: 700; }
+  .req-name small { display: block; font-weight: 400; color: var(--ink-2); font-size: .82em; }
+  .rbar { position: relative; display: flex; gap: 2px; height: 48px; }
+  .rbar > span {
+    height: 100%;
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    font-size: .78em;
+    font-weight: 600;
+    color: var(--on-color);
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .rbar .system { background: var(--c-system); }
+  .rbar .docs { background: var(--c-docs); }
+  .rbar .history { background: var(--c-history); }
+  .rbar .question { background: var(--c-question); }
+  .rbar .date { background: var(--c-danger); color: #fff; }
+  .rbar .tools { background: var(--c-tools); }
+  .rbar .cachedpart { box-shadow: inset 0 0 0 3px var(--c-cache); }
+  .rbar .missed { opacity: .45; }
+  .rbar > .marker {
+    overflow: visible;
+    position: absolute;
+    top: -12px; bottom: -12px;
+    width: 0;
+    border-left: 3px dashed var(--c-cache);
+    padding: 0;
+  }
+  .rbar .marker::after {
+    content: "cache marker";
+    position: absolute;
+    top: -18px; left: -40px;
+    width: 80px;
+    text-align: center;
+    font-size: .72em;
+    font-weight: 700;
+    color: var(--c-cache);
+  }
+  .verdict { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; margin-top: 8px; font-size: .9em; }
+  .verdict.ok { color: var(--c-cache); }
+  .verdict.bad { color: var(--c-danger); }
+  .brace { display: flex; gap: 2px; margin-top: 6px; font-size: .76em; color: var(--ink-2); }
+  .brace span { border-top: 2px solid currentColor; padding-top: 3px; text-align: center; }
+  .brace .c { color: var(--c-cache); }
+  .brace .n { color: var(--ink-2); }
+
+  .rule-list { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: .9em; }
+  .rule-list .tk { background: var(--card); border: 1.5px solid var(--rule); border-radius: 6px; padding: 3px 9px; }
+  .rule-list .arrow { color: var(--ink-3); }
+
+  /* price table */
+  .prices { width: 100%; border-collapse: collapse; font-size: .92em; align-self: center; }
+  .prices th, .prices td { text-align: left; padding: 12px 14px; border-bottom: 1.5px solid var(--rule); vertical-align: top; }
+  .prices th { font-size: .8em; color: var(--ink-2); font-weight: 600; }
+  .prices td:first-child { font-weight: 700; white-space: nowrap; }
+  .prices td b { color: var(--c-cache); }
+  .prices td small { display: block; color: var(--ink-3); font-family: var(--font-text); margin-top: 2px; }
+
+  /* the 20-question chart reuses page 01's chart styles */
+  .bar-c .cachepart { background: color-mix(in srgb, var(--c-cache) 75%, var(--card)); }
+
+  /* =================== page 11: where graphs stop working, in pictures =================== */
+  .tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; align-content: center; }
+  .tile2 { border: 1.5px solid color-mix(in srgb, var(--c-danger) 45%, var(--rule)); border-radius: 14px; background: color-mix(in srgb, var(--c-danger) 5%, var(--sheet)); padding: 18px 12px; display: grid; justify-items: center; gap: 10px; text-align: center; font-weight: 700; font-size: 1.05em; }
+  .tile2 svg { width: 56px; height: 56px; fill: none; stroke: var(--c-danger); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* LLM calls per chunk */
+  .calls { display: grid; gap: 26px; align-content: center; }
+  .crow { display: grid; grid-template-columns: 120px minmax(0, 1fr) 210px; gap: 14px; align-items: center; }
+  .crow .nm { font-weight: 700; font-size: 1.1em; color: var(--pc); }
+  .crow .sum { font-family: var(--font-text); color: var(--ink-2); }
+  .chunks8 { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; }
+  .c8 { display: grid; justify-items: center; gap: 3px; }
+  .c8 > i { width: 42px; height: 32px; border-radius: 4px; background: color-mix(in srgb, var(--c-docs) 35%, var(--card)); border: 1.5px solid var(--c-docs); }
+  .c8 .dots { display: flex; gap: 3px; min-height: 14px; }
+  .c8 .dots b { width: 13px; height: 13px; border-radius: 50%; background: var(--l3); }
+  .extra { display: flex; gap: 3px; align-items: center; margin-left: 6px; padding-left: 10px; border-left: 2px dashed var(--rule); }
+  .extra b { width: 15px; height: 15px; border-radius: 50%; background: var(--l3); }
+  .extra small { font-size: .78em; color: var(--ink-3); margin-left: 4px; }
+  .legend { display: flex; gap: 16px; align-items: center; font-size: .86em; color: var(--ink-2); }
+  .legend b { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--l3); margin-right: 5px; }
+  .legend i { display: inline-block; width: 14px; height: 11px; border-radius: 3px; background: color-mix(in srgb, var(--c-docs) 35%, var(--card)); border: 1.5px solid var(--c-docs); margin-right: 5px; vertical-align: -1px; }
+
+  /* schema vs free extraction */
+  .vs { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 22px; min-height: 0; }
+  .box3 { border: 1.5px solid var(--bc); border-radius: 14px; background: color-mix(in srgb, var(--bc) 5%, var(--sheet)); padding: 10px 14px; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 6px; min-height: 0; }
+  .box3 h3 { margin: 0; font-size: 1.08em; color: var(--bc); }
+  .box3 .cap { text-align: center; font-family: var(--font-text); color: var(--ink-2); }
+  .pic { width: 100%; height: 100%; min-height: 0; font-family: var(--font-ui); }
+  .pic text { font-size: 11px; font-weight: 700; fill: var(--ink); }
+  .pic .sm { font-size: 9.5px; fill: var(--ink-3); }
+  .pic .e { stroke: var(--frame); stroke-width: 2.2; }
+  .pic .n { fill: var(--card); stroke-width: 3; }
+  .stats { display: flex; gap: 34px; justify-content: center; }
+  .stats div { text-align: center; }
+  .stats b { display: block; font-size: clamp(26px, 2.4vw, 40px); line-height: 1; color: var(--p-kag); font-variant-numeric: tabular-nums; }
+  .stats span { color: var(--ink-2); font-size: .86em; }
+
+  /* broken path */
+  .broken .e { stroke: var(--frame); stroke-width: 3; }
+  .broken .gap { stroke: var(--c-danger); stroke-width: 3; stroke-dasharray: 6 6; }
+  .broken .walk { stroke: var(--c-question); stroke-width: 7; stroke-linecap: round; opacity: .85; }
+  .broken .stopx { stroke: var(--c-danger); stroke-width: 4; stroke-linecap: round; }
+  .broken .bad { stroke: var(--c-danger); stroke-dasharray: 4 3; }
+  .chain { display: flex; align-items: center; justify-content: center; gap: 12px; font-size: 1.2em; font-weight: 700; }
+  .chain .h { border: 2px solid var(--p-kag); border-radius: 10px; padding: 6px 14px; color: var(--p-kag); }
+  .chain .res { border: 2px solid var(--c-danger); border-radius: 10px; padding: 6px 14px; color: var(--c-danger); }
+
+  /* one change ripples */
+  .ripple { display: grid; gap: 14px; align-content: center; }
+  .rrow { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 14px; align-items: center; }
+  .rrow .nm { font-weight: 700; font-size: 1.1em; color: var(--pc); }
+  .work { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .job { border-radius: 8px; padding: 6px 12px; font-weight: 700; border: 2px solid var(--jc); background: color-mix(in srgb, var(--jc) 12%, var(--card)); }
+  .job.llm { --jc: var(--l3); }
+  .job.cheap { --jc: var(--c-question); }
+  .job.alg { --jc: var(--c-cache); }
+  .is-on .job { animation: flashjob 1.4s ease-out both; animation-delay: var(--d, 0s); }
+  @keyframes flashjob { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--jc) 70%, transparent); } 100% { box-shadow: 0 0 0 14px transparent; } }
+  .plus { color: var(--ink-3); font-weight: 700; }
+
+  /* per-question timelines */
+  .tlines { display: grid; gap: 14px; align-content: center; }
+  .trow { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 14px; align-items: center; }
+  .trow .nm { font-weight: 700; color: var(--pc); }
+  .trow .nm small { display: block; font-weight: 400; color: var(--ink-3); font-size: .8em; }
+  .segs { display: flex; gap: 4px; align-items: stretch; height: 34px; }
+  .seg2 { display: grid; place-items: center; border-radius: 6px; font-size: .78em; font-weight: 700; padding: 0 8px; white-space: nowrap; color: var(--on-color); background: var(--sgc); transform-origin: left; }
+  .seg2.llm { --sgc: var(--l3); }
+  .seg2.db { --sgc: var(--c-tools); }
+  .seg2.par { --sgc: var(--l3); background: repeating-linear-gradient(90deg, var(--l3) 0 14px, color-mix(in srgb, var(--l3) 70%, var(--card)) 14px 16px); }
+  .is-on .seg2 { animation: segIn .5s var(--ease) both; animation-delay: var(--d, 0s); }
+  @keyframes segIn { from { transform: scaleX(0); opacity: 0; } }
+
+  /* tooling */
+  .tools2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 22px; align-content: center; }
+  .tool { border: 1.5px solid var(--tc); border-radius: 14px; padding: 16px 18px; background: color-mix(in srgb, var(--tc) 6%, var(--sheet)); display: grid; gap: 8px; }
+  .tool h3 { margin: 0; color: var(--tc); font-size: 1.2em; }
+  .tool .st { display: inline-block; justify-self: start; border-radius: 999px; padding: 2px 12px; font-weight: 700; color: var(--on-color); background: var(--sbg); }
+  .tool span { font-family: var(--font-text); color: var(--ink-2); }
+
+  /* when it is worth it */
+  .worth { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 22px; align-content: center; }
+  .worth ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+  .worth li { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 10px; align-items: center; font-size: 1.08em; }
+  .worth li i { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-style: normal; font-weight: 700; color: var(--on-color); background: var(--ic); }
+  .worth h3 { margin: 0 0 10px; font-size: 1.1em; color: var(--hc); }
+</style>
+</head>
+<body data-prev="10-kag-vs-graphrag.html" data-next="12-compare.html" data-topic="11">
+<div class="deck">
+  <header class="topbar">
+    <span class="sec">11</span>
+    <span class="name">Where graphs stop working</span>
+    <span class="spacer"></span>
+    <a href="index.html">Agenda</a>
+  </header>
+
+  <main class="layout tl">
+    <aside class="tl-col">
+      <div class="tl-head">
+        <h1>Where graphs stop working</h1>
+        <p class="sub">The price of KAG and GraphRAG.</p>
+      </div>
+      <ol id="timeline" class="timeline"></ol>
+    </aside>
+
+    <section class="stage" aria-label="Animation">
+
+      <!-- 0 -->
+      <div class="layer explain" data-show="0">
+        <div><h2>Five prices to pay</h2></div>
+        <div class="tiles">
+          <div class="tile2" data-show="0" data-anim="up"><svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="16"/><path d="M24 14v10l7 5"/></svg>Costly to build</div>
+          <div class="tile2" data-show="0" data-anim="up" style="--delay:.12s"><svg viewBox="0 0 48 48"><circle cx="18" cy="16" r="6"/><path d="M6 40c0-7 5-12 12-12s12 5 12 12"/><path d="M32 18h10M32 26h10M32 34h7"/></svg>Needs experts</div>
+          <div class="tile2" data-show="0" data-anim="up" style="--delay:.24s"><svg viewBox="0 0 48 48"><circle cx="9" cy="24" r="4"/><circle cx="39" cy="24" r="4"/><path d="M13 24h7M28 24h7"/><path d="M21 19l6 10M27 19l-6 10"/></svg>Errors break paths</div>
+          <div class="tile2" data-show="0" data-anim="up" style="--delay:.36s"><svg viewBox="0 0 48 48"><path d="M10 8h18l8 8v24H10z"/><path d="M28 8v8h8"/><path d="M38 30a8 8 0 1 1-3-6"/></svg>Hard to keep current</div>
+          <div class="tile2" data-show="0" data-anim="up" style="--delay:.48s"><svg viewBox="0 0 48 48"><path d="M6 34h8M18 34h8M30 34h12"/><path d="M6 24h20M30 24h6"/><path d="M6 14h12"/></svg>Slower answers</div>
+        </div>
+        <div></div>
+      </div>
+
+      <!-- 1: build cost -->
+      <div class="layer explain" data-show="1">
+        <div><h2>1. Costly to build</h2><p class="lead">LLM calls before the first question, for the same 8 chunks.</p></div>
+        <div class="calls" id="calls"></div>
+        <div class="foot">The GraphRAG repository: "indexing can be an expensive operation… start small". KAG paper: "multiple LLM calls during the construction and solving phases". Cheaper modes exist (LazyGraphRAG, KAG's lightweight build).</div>
+      </div>
+
+      <!-- 2: experts -->
+      <div class="layer explain" data-show="2">
+        <div><h2>2. Accurate graphs need experts</h2></div>
+        <div class="vs">
+          <div class="box3" style="--bc:var(--c-danger)" data-show="2" data-anim="up">
+            <h3>Free extraction</h3>
+            <svg class="pic" viewBox="0 0 320 180" preserveAspectRatio="xMidYMid meet" aria-label="A noisy graph with duplicates">
+              <g class="e"><line x1="40" y1="40" x2="140" y2="70"/><line x1="140" y1="70" x2="250" y2="40"/><line x1="140" y1="70" x2="90" y2="140"/><line x1="90" y1="140" x2="220" y2="140"/><line x1="250" y1="40" x2="220" y2="140"/><line x1="40" y1="40" x2="90" y2="140"/><line x1="140" y1="70" x2="280" y2="110"/></g>
+              <circle class="n" cx="40" cy="40" r="9" stroke="var(--c-danger)"/><circle class="n" cx="140" cy="70" r="9" stroke="var(--c-danger)"/><circle class="n" cx="250" cy="40" r="9" stroke="var(--c-danger)"/><circle class="n" cx="90" cy="140" r="9" stroke="var(--c-danger)"/><circle class="n" cx="220" cy="140" r="9" stroke="var(--c-danger)"/><circle class="n" cx="280" cy="110" r="9" stroke="var(--c-danger)"/>
+              <text x="40" y="24" text-anchor="middle">Sara Ahmed</text><text x="250" y="24" text-anchor="middle">S. Ahmed</text><text x="140" y="56" text-anchor="middle">sales</text><text x="90" y="164" text-anchor="middle">Sales Dept</text><text x="220" y="164" text-anchor="middle">head</text><text x="290" y="96" text-anchor="middle">thing</text>
+            </svg>
+            <div class="cap">Cheap, but duplicates and vague types</div>
+          </div>
+          <div class="box3" data-show="2" data-anim="up" style="--bc:var(--p-kag);--delay:.25s">
+            <h3>Under a schema</h3>
+            <svg class="pic" viewBox="0 0 320 180" preserveAspectRatio="xMidYMid meet" aria-label="A clean typed graph">
+              <g class="e"><line x1="50" y1="90" x2="160" y2="90"/><line x1="160" y1="90" x2="270" y2="90"/><line x1="270" y1="90" x2="270" y2="30"/></g>
+              <circle class="n" cx="50" cy="90" r="10" stroke="var(--c-history)"/><circle class="n" cx="160" cy="90" r="10" stroke="var(--c-docs)"/><circle class="n" cx="270" cy="90" r="10" stroke="var(--c-history)"/><circle class="n" cx="270" cy="30" r="10" stroke="var(--c-system)"/>
+              <text x="50" y="118" text-anchor="middle">Omar</text><text class="sm" x="50" y="132" text-anchor="middle">Person</text>
+              <text x="160" y="118" text-anchor="middle">Sales team</text><text class="sm" x="160" y="132" text-anchor="middle">Team</text>
+              <text x="270" y="118" text-anchor="middle">Sara Ahmed</text><text class="sm" x="270" y="132" text-anchor="middle">Person</text>
+              <text x="222" y="34" text-anchor="middle">Line manager</text>
+            </svg>
+            <div class="cap">Accurate, but someone must design the types and rules</div>
+          </div>
+        </div>
+        <div class="stats" data-show="2" style="--delay:.6s"><div><b class="num">1.8M</b><span>entities</span></div><div><b class="num">5M</b><span>relations</span></div><div><b class="num">700+</b><span>expert rules</span></div></div>
+      </div>
+
+      <!-- 3: errors break paths -->
+      <div class="layer explain" data-show="3">
+        <div><h2>3. One extraction error breaks the path</h2></div>
+        <svg class="pic broken" viewBox="0 0 900 170" preserveAspectRatio="xMidYMid meet" aria-label="The path stops at S. Ahmed, never merged with Sara Ahmed">
+          <line class="e" x1="90" y1="80" x2="330" y2="80"/><line class="e" x1="330" y1="80" x2="560" y2="80"/>
+          <line class="gap" x1="575" y1="80" x2="785" y2="80"/>
+          <line class="walk" x1="90" y1="80" x2="330" y2="80" data-show="3" style="--delay:.5s"/>
+          <line class="walk" x1="330" y1="80" x2="560" y2="80" data-show="3" style="--delay:1.1s"/>
+          <g data-show="3" style="--delay:1.7s"><line class="stopx" x1="660" y1="64" x2="690" y2="96"/><line class="stopx" x1="690" y1="64" x2="660" y2="96"/></g>
+          <circle class="n" cx="90" cy="80" r="14" stroke="var(--c-history)" fill="var(--card)" stroke-width="3"/>
+          <circle class="n" cx="330" cy="80" r="14" stroke="var(--c-docs)" fill="var(--card)" stroke-width="3"/>
+          <circle class="n bad" cx="560" cy="80" r="14" stroke="var(--c-danger)" fill="var(--card)" stroke-width="3"/>
+          <circle class="n" cx="800" cy="80" r="14" stroke="var(--c-history)" fill="var(--card)" stroke-width="3"/>
+          <text x="90" y="122" text-anchor="middle">Omar Khalid</text><text x="330" y="122" text-anchor="middle">Sales team</text>
+          <text x="560" y="122" text-anchor="middle" style="fill:var(--c-danger)">S. Ahmed</text><text x="800" y="122" text-anchor="middle">Sara Ahmed</text>
+          <text x="675" y="140" text-anchor="middle" class="sm" data-show="3" style="fill:var(--c-danger);--delay:1.9s">never merged</text>
+        </svg>
+        <div class="chain" data-show="3" style="--delay:2.4s"><span>Each step</span><span class="h">90%</span><span>×</span><span class="h">90%</span><span>×</span><span class="h">90%</span><span>=</span><span class="res">73% for 3 steps</span></div>
+        <div class="foot">The percentages show how errors multiply; they are not measured rates.</div>
+      </div>
+
+      <!-- 4: keeping current -->
+      <div class="layer explain" data-show="4">
+        <div><h2>4. One document changes</h2><p class="lead">What has to run again.</p></div>
+        <div class="ripple">
+          <div class="rrow" style="--pc:var(--p-rag)"><span class="nm">RAG</span><div class="work"><span class="job cheap" data-show="4" style="--d:.2s">re-embed its chunks</span></div></div>
+          <div class="rrow" style="--pc:var(--p-kag)"><span class="nm">KAG</span><div class="work"><span class="job llm" data-show="4" style="--delay:.5s;--d:.5s">re-extract its facts</span><span class="plus">+</span><span class="job llm" data-show="4" style="--delay:.8s;--d:.8s">re-align with the graph</span></div></div>
+          <div class="rrow" style="--pc:var(--c-history)"><span class="nm">GraphRAG</span><div class="work"><span class="job llm" data-show="4" style="--delay:1.1s;--d:1.1s">re-extract its entities</span><span class="plus">+</span><span class="job alg" data-show="4" style="--delay:1.4s;--d:1.4s">communities may shift</span><span class="plus">+</span><span class="job llm" data-show="4" style="--delay:1.7s;--d:1.7s">rewrite their reports</span></div></div>
+        </div>
+        <div class="foot">Purple: LLM work. The KAG paper argues that GraphRAG's summaries make incremental updates hard.</div>
+      </div>
+
+      <!-- 5: slower answers -->
+      <div class="layer explain" data-show="5">
+        <div><h2>5. Each answer takes more steps</h2><p class="lead">One question, start to finish.</p></div>
+        <div class="tlines">
+          <div class="trow" style="--pc:var(--p-rag)"><span class="nm">RAG</span>
+            <div class="segs" data-show="5"><span class="seg2 db" style="flex:1;--d:.2s">search</span><span class="seg2 llm" style="flex:2;--d:.4s">answer</span></div></div>
+          <div class="trow" style="--pc:var(--p-kag)"><span class="nm">KAG</span>
+            <div class="segs" data-show="5"><span class="seg2 llm" style="flex:2;--d:.7s">plan</span><span class="seg2 db" style="flex:1;--d:.9s">lookup</span><span class="seg2 db" style="flex:1;--d:1.05s">lookup</span><span class="seg2 llm" style="flex:1.5;--d:1.2s">read text</span><span class="seg2 llm" style="flex:2;--d:1.4s">answer</span></div></div>
+          <div class="trow" style="--pc:var(--c-history)"><span class="nm">GraphRAG<small>global search</small></span>
+            <div class="segs" data-show="5"><span class="seg2 par" style="flex:4;--d:1.7s">map: one call per batch of reports</span><span class="seg2 llm" style="flex:2;--d:2s">reduce</span></div></div>
+        </div>
+        <div class="foot">Purple: LLM calls. KAG's planning uses about twice the tokens of simple sub-questions, and a wrong plan gives a confident wrong answer (KAG paper, limitations).</div>
+      </div>
+
+      <!-- 6: tooling -->
+      <div class="layer explain" data-show="6">
+        <div><h2>The tooling today</h2></div>
+        <div class="tools2">
+          <div class="tool" style="--tc:var(--p-kag);--sbg:var(--p-rag)" data-show="6" data-anim="up"><h3>OpenSPG / KAG</h3><span class="st">last release June 2025</span><span>v0.8.0 · Apache-2.0 · Ant Group</span></div>
+          <div class="tool" data-show="6" data-anim="up" style="--tc:var(--c-history);--sbg:var(--c-danger);--delay:.2s"><h3>microsoft / graphrag</h3><span class="st">maintenance mode</span><span>v3.3.0 · MIT · Microsoft Research</span></div>
+        </div>
+        <div class="foot">Checked on the GitHub repositories on 14 November 2026. Usable, but check before you depend on them.</div>
+      </div>
+
+      <!-- 7: when it's worth it -->
+      <div class="layer explain" data-show="7">
+        <div><h2>When a graph is worth it</h2></div>
+        <div class="worth">
+          <div data-show="7" data-anim="up"><h3 style="--hc:var(--c-question)">Build a graph when</h3>
+            <ul><li><i style="--ic:var(--c-question)">✓</i>answers depend on relationships, rules or numbers</li>
+                <li><i style="--ic:var(--c-question)">✓</i>people ask about the whole collection</li>
+                <li><i style="--ic:var(--c-question)">✓</i>the knowledge is stable enough to rebuild in batches</li>
+                <li><i style="--ic:var(--c-question)">✓</i>a wrong answer is costly, and you need its path</li></ul></div>
+          <div data-show="7" data-anim="up" style="--delay:.3s"><h3 style="--hc:var(--p-rag)">Stay with RAG or CAG when</h3>
+            <ul><li><i style="--ic:var(--p-rag)">→</i>one or two passages hold the answer</li>
+                <li><i style="--ic:var(--p-rag)">→</i>the documents change all the time</li>
+                <li><i style="--ic:var(--p-rag)">→</i>nobody can own a schema</li>
+                <li><i style="--ic:var(--p-rag)">→</i>a cited, good-enough answer is fine</li></ul></div>
+        </div>
+        <div></div>
+      </div>
+
+    </section>
+  </main>
+</div>
+
+<script src="assets/session.js?v=8"></script>
+<script src="assets/deck.js?v=6"></script>
+<script>
+(function () {
+  // 8 chunks per pattern; dots are LLM calls made for each one
+  const ROWS = [
+    ["RAG", "var(--p-rag)", 0, 0, "", "embeddings only, no LLM calls"],
+    ["KAG", "var(--p-kag)", 1, 3, "align", "1 per chunk, plus alignment"],
+    ["GraphRAG", "var(--c-history)", 2, 4, "summaries + reports", "2 per chunk, plus summaries and reports"],
+  ];
+  let h = `<div class="legend"><span><i></i>a chunk</span><span><b></b>an LLM call</span></div>`;
+  ROWS.forEach(([nm, c, per, extra, xl, sum], r) => {
+    const base = r * 1.1;
+    let ch = "";
+    for (let i = 0; i < 8; i++) {
+      let d = "";
+      for (let j = 0; j < per; j++) d += `<b data-show="1" style="--delay:${(base + .3 + i * .08 + j * .04).toFixed(2)}s"></b>`;
+      ch += `<span class="c8"><span class="dots">${d}</span><i></i></span>`;
+    }
+    let ex = "";
+    if (extra) { for (let j = 0; j < extra; j++) ex += `<b data-show="1" style="--delay:${(base + 1 + j * .1).toFixed(2)}s"></b>`; ex = `<span class="extra">${ex}<small>${xl}</small></span>`; }
+    h += `<div class="crow" style="--pc:${c}"><span class="nm">${nm}</span><div class="chunks8">${ch}${ex}</div><span class="sum" data-show="1" style="--delay:${(base + 1.2).toFixed(2)}s">${sum}</span></div>`;
+  });
+  document.getElementById("calls").innerHTML = h;
+
+  Deck.init({
+    groupColors: { "The limits": "var(--c-danger)", "Next": "var(--c-response)" },
+    steps: [
+      { title: "Five prices to pay", body: `<p>KAG and GraphRAG answer harder questions. Here is what that costs.</p>`, notes: `<ul><li>Most of these apply to both. They come from building knowledge with an LLM before anyone asks.</li></ul>` },
+      { group: "The limits", title: "1. Costly to build", body: `<p>RAG makes <strong>no LLM calls</strong> to build its index. KAG makes at least one per chunk; GraphRAG at least two, plus summaries and reports.</p>`,
+        notes: `<ul><li>Call counts per chunk follow each method's pipeline; the 8 chunks are an illustration.</li><li>LazyGraphRAG: indexing at about 0.1% of full GraphRAG's cost (Microsoft). KAG's lightweight build: 89% fewer construction tokens (project's claim).</li></ul>` },
+      { group: "The limits", title: "2. Needs experts", body: `<p>Free extraction is cheap and <strong>noisy</strong>. A schema makes it accurate, but someone has to <strong>design</strong> it.</p>`,
+        notes: `<ul><li>The numbers: Ant Group's medical graph behind their e-health Q&amp;A, as described in the KAG paper.</li></ul>` },
+      { group: "The limits", title: "3. Errors break paths", body: `<p>If "S. Ahmed" is never merged with "Sara Ahmed", the path <strong>stops halfway</strong>. Errors multiply with every hop.</p>`,
+        notes: `<ul><li>The percentages illustrate compounding; they are not measured.</li></ul>` },
+      { group: "The limits", title: "4. Hard to keep current", body: `<p>For RAG, a changed document means re-embedding. For graphs, it means <strong>more LLM work</strong>, and summaries that depend on it.</p>`,
+        notes: `<ul><li>The KAG paper argues GraphRAG's hierarchical summaries make incremental updates difficult.</li></ul>` },
+      { group: "The limits", title: "5. Slower answers", body: `<p>One KAG answer is a small program: <strong>plan, look up, read, answer</strong>. GraphRAG's global search calls the LLM once per batch of reports.</p>`,
+        notes: `<ul><li>KAG paper: logical-form planning uses about twice the tokens; planning accuracy is listed as unsolved.</li></ul>` },
+      { group: "The limits", title: "The tooling today", body: `<p>KAG's last release was <strong>June 2025</strong>. GraphRAG is in <strong>maintenance mode</strong>.</p>`,
+        notes: `<ul><li>Status checked on the GitHub repositories on 14 November 2026.</li></ul>` },
+      { group: "Next", title: "When a graph is worth it", body: `<p>Relationship-heavy, whole-collection or high-stakes questions over <strong>stable</strong> knowledge. Otherwise, RAG or CAG.</p><p>Next: <strong>putting it all together</strong>.</p>`,
+        notes: `<ul><li>Bridge to topic 12: one decision guide across all patterns.</li></ul>` },
+    ],
+  });
+})();
+</script>
+</body>
+</html>
